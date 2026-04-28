@@ -1,0 +1,11 @@
+exportPattern("^[[:alpha:]]+")
+
+importFrom(magrittr, "%>%")
+export("%>%")
+importFrom(struct, new_struct)
+importFrom(struct, entity)
+importFrom(struct, DatasetExperiment)
+importFrom(struct, model_train)
+importFrom(struct, model_predict)
+importFrom(struct, param_list)
+importFrom(struct, "output_value<-")
