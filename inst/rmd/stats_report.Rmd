@@ -265,6 +265,13 @@ Statistical analysis of processed `r units` data. Pre-defined comparisons,
 correlations, and linear models from the YAML config; multivariate (PCA +
 heatmap) inspection per comparison.
 
+> **All per-feature numerical results — comparisons p-values, correlations,
+> linear-model coefficients — are written to the stats xlsx (file path
+> ends with `_stats.xlsx`) saved alongside this HTML report. Open it in
+> Excel to filter / sort the full tables.** This report shows only the
+> visualisations and the volcano significant-feature shortlist; the
+> long-form tables are intentionally not duplicated here.
+
 **Missing-value policy** (which sections impute and which don't):
 
 | Section | NA handling |
@@ -386,33 +393,17 @@ if(length(comparisons) == 0){
 }
 ```
 
-## 4.1 P-value table {-}
-
 **Methods.** For each comparison the test method is auto-selected by group
 count: 2 levels → t-test + Wilcoxon; ≥3 levels → ANOVA + Kruskal-Wallis,
 plus Tukey HSD post-hoc per pair. P-values are Benjamini-Hochberg adjusted
-across **all** comparisons × methods × features. Full statistic + df +
-group means columns are in the `stats` tab of the xlsx.
+across **all** comparisons × methods × features.
 
-```{r stats-table}
-if(!is.null(stats_tables) && nrow(stats_tables$stats) > 0){
-  DT::datatable(
-    stats_tables$stats %>%
-      dplyr::select(comparison, method, feature, group1, group2,
-                    FC, log2FC, p_value, p_adj, significant) %>%
-      dplyr::mutate(FC      = round(FC, 4),
-                    log2FC  = round(log2FC, 4),
-                    p_value = signif(p_value, 4),
-                    p_adj   = signif(p_adj, 4)),
-    filter = "top",
-    options = list(pageLength = 25, scrollX = TRUE)
-  )
-} else {
-  cat("_No comparison results._\n")
-}
-```
+> **Full p-value tables (per comparison + per method, all features) are
+> in the `stats` tab of the stats xlsx** written by `run_MRManalyzeR()`
+> alongside the rendered HTML reports. The same xlsx also carries the
+> `correlations` and `linear_models` tabs.
 
-## 4.2 Per-compound `r switch(plot_type, box="boxplot", bar="barplot", both="boxplot + barplot")` (faceted across comparisons) {-}
+## 4.1 Per-compound `r switch(plot_type, box="boxplot", bar="barplot", both="boxplot + barplot")` (faceted across comparisons) {-}
 
 `r if(!plot_boxplot_per_comparison) "_Skipped — set_ \x60plot_boxplot_per_compound: True\x60 _in YAML to enable._"`
 
@@ -510,7 +501,7 @@ for(i in seq_along(detected_compounds)){
 }
 ```
 
-## 4.3 Per-compound `r switch(plot_type, box="boxplot", bar="barplot", both="boxplot + barplot")` by factor(s) {-}
+## 4.2 Per-compound `r switch(plot_type, box="boxplot", bar="barplot", both="boxplot + barplot")` by factor(s) {-}
 
 `r if(!boxplot_enabled) "_Skipped — set_ \x60boxplot.enabled: True\x60 _in YAML to enable._"`
 
@@ -621,7 +612,7 @@ function showFactorBoxplot_%s(id){
 }
 ```
 
-## 4.4 PCA per comparison
+## 4.3 PCA per comparison
 
 `r if(!pca_include) "_Skipped — set_ \x60pca.include: True\x60 _in YAML to enable._"`
 
@@ -914,7 +905,7 @@ for(nm in names(.pca_runs)){
 }
 ```
 
-## 4.5 Volcano per comparison {.tabset .tabset-fade}
+## 4.4 Volcano per comparison {.tabset .tabset-fade}
 
 `r if(!volcano_include) "_Skipped — set_ \x60volcano.include: True\x60 _in YAML to enable._"`
 
@@ -1032,36 +1023,7 @@ if(nrow(volc_data) == 0){
 }
 ```
 
-## 4.6 p-value tables per comparison {.tabset .tabset-fade}
-
-```{r pval-per-comp, results="asis", eval=!is.null(stats_tables) && nrow(stats_tables$stats) > 0}
-# Driven by the YAML `comparisons:` list (in declaration order); falls back to
-# any extra comparisons present in stats_tables$stats but missing from YAML.
-.comp_names = unique(c(vapply(comparisons, function(c) c$name, character(1)),
-                       unique(stats_tables$stats$comparison)))
-.comp_names = .comp_names[.comp_names %in% unique(stats_tables$stats$comparison)]
-
-for(cname in .comp_names){
-  cat(sprintf("\n### %s {-}\n\n", cname))
-  sub = stats_tables$stats %>%
-    dplyr::filter(comparison == cname) %>%
-    dplyr::select(method, feature, group1, group2,
-                  FC, log2FC, mean_g1, mean_g2,
-                  statistic, p_value, p_adj, significant) %>%
-    dplyr::mutate(FC      = round(FC, 4),
-                  log2FC  = round(log2FC, 4),
-                  p_value = signif(p_value, 4),
-                  p_adj   = signif(p_adj, 4))
-  if(nrow(sub) == 0){ cat("_No rows for this comparison._\n\n"); next }
-  print(DT::datatable(sub,
-                      elementId = paste0("pval_", gsub("[^A-Za-z0-9]", "_", cname)),
-                      filter = "top",
-                      options = list(pageLength = 20, scrollX = TRUE)))
-  cat("\n\n")
-}
-```
-
-## 4.7 Heatmap (samples × features) {.tabset .tabset-fade}
+## 4.5 Heatmap (samples × features) {.tabset .tabset-fade}
 
 `r if(!heatmap_include) "_Skipped — set_ \x60heatmap.include: True\x60 _in YAML to enable._"`
 
@@ -1429,26 +1391,13 @@ for(ratio_cfg in ion_ratios_list){
 
 # 6. Correlations (feature × feature) {.tabset}
 
-Pairwise feature correlations within each subset. Long table written to the
-`correlations` tab in the xlsx.
+Pairwise feature correlations within each subset, one heatmap per
+(correlation × subset × method).
 
-## 6.1 Long table {-}
+> **Long table of all pairs (estimates, statistics, p-values, p_adj) is
+> in the `correlations` tab of the stats xlsx.**
 
-```{r corr-table}
-if(!is.null(stats_tables) && nrow(stats_tables$correlations) > 0){
-  DT::datatable(
-    stats_tables$correlations %>%
-      dplyr::mutate(dplyr::across(c(estimate, statistic), ~ round(., 4)),
-                    dplyr::across(c(p_value, p_adj), ~ signif(., 4))),
-    filter = "top",
-    options = list(pageLength = 25, scrollX = TRUE)
-  )
-} else {
-  cat("_No correlations defined._\n")
-}
-```
-
-## 6.2 Heatmaps {-}
+## Heatmaps {-}
 
 ```{r corr-heatmaps, results="asis", eval=!is.null(stats_tables) && nrow(stats_tables$correlations) > 0, fig.width=8*fig_scale, fig.height=7*fig_scale}
 # One heatmap per (correlation × subset × method).
@@ -1524,7 +1473,7 @@ for(i in seq_len(nrow(combos))){
 }
 ```
 
-# 7. Linear models {.tabset .tabset-fade}
+# 7. Linear models
 
 For each feature we fit `feature ~ formula` (one `lm()` per feature).
 Each row of the table is **one coefficient × feature**.
@@ -1547,56 +1496,13 @@ levels `Treatment = Ctrl`, `Sex = Female`):
 
 **`significant` (p_adj < `r sig_threshold`)**: the coefficient is statistically
 distinguishable from zero after Benjamini-Hochberg correction across all
-features × terms in this run. Biologically: that predictor has a measurable
-additive effect on this lipid's intensity, beyond what the other terms in the
-formula already explain. A significant `Treatment:HDM_Curdlan` therefore says
-the lipid genuinely shifts with treatment in a way that isn't sex confounding.
+features × terms in this run.
 
 `term_raw` keeps the original `lm()` coefficient name (e.g.
 `TreatmentHDM_Curdlan`) for joining with downstream scripts.
 
-## All models {-}
-
-```{r lm-table-all}
-if(!is.null(stats_tables) && nrow(stats_tables$linear_models) > 0){
-  DT::datatable(
-    stats_tables$linear_models %>%
-      dplyr::select(model, feature, term, term_raw,
-                    estimate, std_error, statistic,
-                    p_value, p_adj, significant) %>%
-      dplyr::mutate(dplyr::across(c(estimate, std_error, statistic), ~ round(., 4)),
-                    dplyr::across(c(p_value, p_adj), ~ signif(., 4))),
-    filter = "top",
-    options = list(pageLength = 25, scrollX = TRUE)
-  )
-} else {
-  cat("_No linear models defined._\n")
-}
-```
-
-```{r lm-table-per-model, results="asis", eval=!is.null(stats_tables) && nrow(stats_tables$linear_models) > 0}
-# YAML-declared model order, falling back to anything else in the stats output.
-.lm_names = unique(c(vapply(linear_models, function(m) m$name, character(1)),
-                     unique(stats_tables$linear_models$model)))
-.lm_names = .lm_names[.lm_names %in% unique(stats_tables$linear_models$model)]
-
-for(mname in .lm_names){
-  cat(sprintf("\n## %s {-}\n\n", mname))
-  sub = stats_tables$linear_models %>%
-    dplyr::filter(model == mname) %>%
-    dplyr::select(feature, term, term_raw,
-                  estimate, std_error, statistic,
-                  p_value, p_adj, significant) %>%
-    dplyr::mutate(dplyr::across(c(estimate, std_error, statistic), ~ round(., 4)),
-                  dplyr::across(c(p_value, p_adj), ~ signif(., 4)))
-  if(nrow(sub) == 0){ cat("_No rows for this model._\n\n"); next }
-  print(DT::datatable(sub,
-                      elementId = paste0("lm_", gsub("[^A-Za-z0-9]", "_", mname)),
-                      filter = "top",
-                      options = list(pageLength = 25, scrollX = TRUE)))
-  cat("\n\n")
-}
-```
+> **Per-model coefficient tables (estimate, std_error, statistic, p_value,
+> p_adj, significant) are in the `linear_models` tab of the stats xlsx.**
 
 # 8. Session info
 
