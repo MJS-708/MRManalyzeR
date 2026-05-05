@@ -1,0 +1,41 @@
+
+body {
+  font-family: Calibri, helvetica, sans-serif;
+  font-size: 14pt;
+}
+
+
+h1 {
+  color: rgb(102, 140, 255);
+  font-weight: bold;
+  font-size: 200%;
+}
+
+.title {
+  margin-right: 100px;
+}
+
+h2 {
+  color: rgb(153, 153, 230);
+  font-size: 180%;
+}
+
+h3 {
+  font-size: 120%;
+  font-weight: bold;
+}
+
+h4 {
+  font-size: 110%;
+  font-weight: bold;
+  font-style: italic;
+}
+
+.watermark {
+  opacity: 0.2;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  font-size: 500%;
+  color: #00407d;
+}

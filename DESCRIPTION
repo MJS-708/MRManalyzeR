@@ -1,0 +1,45 @@
+Package: MRManalyzeR
+Type: Package
+Title: Process and Analyse Targeted LC-MS Lipidomics & Metabolomics Data
+Version: 0.2.0
+Authors@R: person("Matthew", "J Smith",
+                  email = "mattyjsmith123@gmail.com",
+                  role = c("aut", "cre"))
+Description: End-to-end processing pipeline for targeted lipidomics and
+    metabolomics data exported from Waters TargetLynx. Reads xlsx workbooks,
+    builds a peak-area / concentration matrix with optional SNR filtering,
+    blank filtering, missing-value imputation, normalisation, concentration
+    adjustment, and batch correction, then renders self-contained HTML data
+    quality and statistical reports. Driven from a single YAML config via
+    `run_MRManalyzeR()`.
+License: file LICENSE
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.3.3
+Depends:
+    R (>= 4.0),
+    struct
+Imports:
+    magrittr,
+    dplyr,
+    tidyr,
+    tibble,
+    yaml,
+    openxlsx,
+    janitor,
+    ggplot2,
+    ggrepel,
+    structToolbox,
+    pmp,
+    rmarkdown,
+    knitr,
+    htmltools,
+    DT,
+    plotly
+Suggests:
+    cowplot,
+    gridExtra,
+    pheatmap,
+    RColorBrewer,
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3

@@ -1,0 +1,152 @@
+# Example combine-mode YAML for MRManalyzeR.
+#
+# Usage:
+#   library(MRManalyzeR)
+#   run_MRManalyzeR_combine("path/to/your_combine_config.yml")
+#
+# What this does:
+#   1. Loads each entry under `combine.datasets:` (.RDS or .xlsx — both OK).
+#   2. Optionally renames per-dataset QC IDs to a shared label and drops
+#      QCs that aren't in the rename map.
+#   3. Aligns variable_meta (feature metadata) across datasets — by default
+#      uses the *intersection* of column names across inputs. Spell out
+#      `feature_meta_cols` only if you want to *narrow* that set.
+#   4. Same for sample_meta (`sample_meta_cols`).
+#   5. Intersects samples by `Sample_ID`, cbind's data matrices, rbind's
+#      variable_meta, and writes:
+#         <output_stub>.RDS         — merged DatasetExperiment
+#         <output_stub>.xlsx        — feature_metadata / sample_metadata / matrix
+#         <output_stub>_stats.xlsx  — stats / correlations / linear_models
+#         <output_stub>_stats_report.html
+#
+# PeakMatrixProcessing and the data_quality_report are NOT run in this mode.
+
+combine:
+
+  # --- Inputs --------------------------------------------------------------
+  datasets:
+    - path: "D:/__STUDIES/021_HDM_mice/results/LC-MSMS/NormByArea/GOM_mouseSections_HDM_ng_mL_.RDS"
+      tag:  "GOM"
+      # Optional: rename QC sample IDs to a shared label across all panels.
+      # QCs not listed here are dropped from this dataset.
+      qc_remap: { "QC1": "QC_pooled" }
+      # Optional: rename variable_meta columns BEFORE aligning across panels.
+      # Format: { new_name: "old_name" }
+      # feature_meta_rename: { Class: SubClass }
+
+    - path: "D:/__STUDIES/021_HDM_mice/results/LC-MSMS/NormByArea/cysLT_mouseSections_HDM_ng_mL_.RDS"
+      tag:  "cysLT"
+      qc_remap: { "QC1": "QC_pooled" }
+
+    - path: "D:/__STUDIES/021_HDM_mice/results/LC-MSMS/NormByArea/SPM_mouseSections_HDM_Response_.RDS"
+      tag:  "SPM"
+      # No qc_remap → QCs (matching ^QC) pass through unchanged
+
+  # --- Alignment options ---------------------------------------------------
+  # Both default to the INTERSECTION of column names across all inputs.
+  # Spell them out only when you want to narrow / re-order / enforce a set.
+  feature_meta_cols: ~     # e.g. [Compound, Class, Primary]
+  sample_meta_cols:  ~     # e.g. [Sample_ID, Treatment, Sex, Lobe]
+
+  # Match samples by this column in sample_meta (default Sample_ID).
+  sample_id_col: Sample_ID
+
+  # Sample IDs to exclude from the final merged dataset.
+  drop_samples: []
+
+  # Prefix feature names with the dataset tag (e.g. "GOM__PGE2") — avoids
+  # collisions when the same feature name appears in multiple panels.
+  prefix_features: True
+
+  # --- Output --------------------------------------------------------------
+  combined_name: "HDM_combined"
+  units:         "combined"     # label used in plot axes and report text
+  output_stub:   "D:/__STUDIES/021_HDM_mice/results/LC-MSMS/Combined/HDM_combined"
+
+
+# ============================================================================
+# Stats analyses to run on the merged dataset. Same schema as the
+# stats_report block of the standard MRManalyzeR YAML.
+# ============================================================================
+stats_report:
+  execute: True
+  fig_scale: 1
+
+  biological_filter:
+    head:   Sample_type
+    levels: ["Sample"]
+
+  global_summary_factor: "Treatment"
+
+  comparisons:
+    - name: Ctrl_vs_HDM
+      enabled: True
+      compare: { factor: Treatment, levels: [Ctrl, HDM_Curdlan] }
+
+  correlations:
+    - name: feature_pairs
+      enabled: True
+      methods: [pearson, spearman]
+      subsets:
+        - { Treatment: Ctrl }
+        - { Treatment: HDM_Curdlan }
+      cluster: True
+      show_values: False
+      include_self: False
+
+  linear_models:
+    - name: treatment_x_sex
+      enabled: True
+      formula: "~ Treatment * Sex"
+      subset: { Sample_type: Sample }
+
+  sig_threshold: 0.05
+
+  pca:
+    include: True
+    components: [1, 2]
+    label: none
+    label_factor: Sample_ID
+    ellipse: group
+    ellipse_confidence: 0.95
+    loadings:
+      include: True
+      color_by: Primary
+    preprocess:
+      feat_na_max:   1
+      sample_na_max: 1
+      impute:      min
+      impute_frac: 0.5
+      transform:   log2
+      center:      True
+      scale:       True
+
+  heatmap:
+    include:                True
+    color_samples_by:       Treatment
+    group_features_by:      Primary
+    transform:              log2
+    scale:                  z
+    cluster_rows:           False
+    cluster_within_groups:  True
+
+  volcano:
+    include:      True
+    use_adjusted: False
+    top_n_label:  10
+
+  # Ion ratios — set enabled: False or remove this block to skip.
+  # Compound names must include the dataset tag prefix when prefix_features: True
+  # (e.g. "GOM__9(10)-EpOME" if prefix_features was set in the combine block).
+  ion_ratios:
+    enabled: False
+    ratios:
+      - num:   "GOM__9(10)-EpOME"
+        den:   "GOM__9(10)-DiHOME"
+        label: "EpOME/DiHOME (9,10)"
+
+  boxplot:
+    enabled: False
+
+  summary_head: Sample_type
+  yaxis_quant:  0.95
