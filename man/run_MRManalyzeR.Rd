@@ -11,7 +11,9 @@ run_MRManalyzeR(path_yaml)
 }
 \value{
 Invisibly, a list with the `DatasetExperiment`, `removed_features`,
-  `stats_tables`, and the resolved output paths.
+  `stats_tables`, and the resolved output paths. When `paths.datatype` is a
+  vector (e.g. `["Area", "Response", "Conc"]`), the function loops over each
+  datatype and returns a list of per-datatype results.
 }
 \description{
 Single entry point that:

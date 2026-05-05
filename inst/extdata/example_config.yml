@@ -1,60 +1,47 @@
-# Example MRManalyzeR project YAML.
-#
-# Usage:
-#   library(MRManalyzeR)
-#   run_MRManalyzeR("path/to/your_config.yml")
-#
-# Layout:
-#   paths:                  -- file locations + dataset identifier
-#   PeakMatrixProcessing:   -- xlsx -> matrix processing (toggle off to re-use existing RDS)
-#   data_quality_report:    -- QC report (CVs, summary, intensity-vs-order, optional QC PCA)
-#   stats_report:           -- comparisons, general boxplots, correlations, linear models, PCA, volcano
-#
-# Backwards compatibility:
-#   - `datatype` may also live under `PeakMatrixProcessing.datatype`.
-#   - `correlations[i].subset:` (singular) still recognised; treated as a 1-element `subsets:` list.
-#   - Legacy `UVA_report:` / `MVA_report:` blocks still recognised in run_MRManalyzeR().
-
 project: &general
   name: example-project
   researcher: Matt Smith
 
+  # See `inst/extdata/example_combine_config.yml` for the merge-multiple-
+  # acquisitions workflow (`run_MRManalyzeR_combine()`).
+
   paths:
-    project_dir: &project_dir 'D:/__STUDIES/example_study'
-    data_dir:    &data_dir    !concat_path [*project_dir, 'data']
-    result_dir:  &result_dir  !concat_path [*project_dir, 'results']
-    fn:          &fn example_dataset
+    project_dir: &project_dir 'C:/Users/matsmi/OneDrive - Karolinska Institutet/Dokument/Bioinformatics/MRManalyzeR'
+    data_dir:    &data_dir    !concat_path [*project_dir, 'inst/extdata']
+    result_dir:  &result_dir  !concat_path [*project_dir, 'temp_res']
+    fn:          &fn example_data
     # Single value or a YAML list to cycle the whole pipeline over multiple
     # datatypes in one run (one xlsx + RDS + report set per datatype):
     #   datatype: ["Area", "Response", "Conc"]
-    datatype:    "Area"            # "Area" | "Conc" | "Response" — drives _<datatype>_ in output filename
+    datatype:    "ng/mL"            # "Area" | "Conc" | "Response" — drives _<datatype>_ in output filename
     suffix: _
 
-  PeakMatrixProcessing:
-    execute: True                  # FALSE => skip processing, load existing RDS for downstream reports
-    tl_headers: ["ID", "Name", "Area", "ng/mL", "Response", "S/N"]
-    snr: 3
-    blank_filter: False
-    blank_head: 'Sample_type'
-    blank_name: 'Blank'
-    replace_MVs: False                                     # FALSE or scalar e.g. 0.2
-    batch_correction: False
-    bc_qc_label: QC
-    bc_factor_name: "Sample_type"
-    bc_header: "Chrom_Batch"
-    normalize: False
-    adjust_conc: False
-    units: "Area"
-    scale_fac: 1
 
-  # ====================================================================
-  # QC report — focused on detecting drift, batch effects, instrument issues.
-  # NO per-compound boxplots here (those moved to stats_report).
-  # ====================================================================
+  PeakMatrixProcessing:
+    execute: True                   # FALSE => skip processing, load existing RDS for downstream reports
+    tl_headers: ["ID", "Name","Area", "ng/mL", "Response",  "S/N"]                    # The required TargetLynx headers, either: ["ID", "Name","Area", "Conc.", "Response",  "S/N"]  OR ["ID", "Name","Area", "ng/mL", "Response",  "S/N"]
+    snr: 3                                       # Signal/Noise ratio to filter based on
+    blank_filter: False                    # Blank filter threshold (reponse must be nx greater than the median in the blank samples
+    blank_head: 'Sample_type'                    # Which header in sample metadata to identify blank sample
+    blank_name: 'Blank'                    # Name of blank sample under the 'blank_head' header
+    replace_MVs: False                    # False or Scalar (e.g. 0.2) to impute missing values. Takes minimum value per feature (excluding blanks) * scalare to replace with.
+    batch_correction: False                    # True or False whether to apply batch correction. Based on batch labels sets median of QCs in each batch to same value (can be median of samples if not QC)
+    bc_qc_label: "Sample"                    # Which samples to use for batch correction - Ideally is QCs if present, else average of samples
+    bc_factor_name: "Sample_type"                    # Which header in the sample medata contains the bc_qc_label
+    bc_header: "Chrom_Batch"                    # Header with batch information (for which the median of QCs in each unique of the groups under this header will be made equal)
+    
+    normalize: False                  # FALSE or name of header to divide by.
+    
+    adjust_conc: False                    # Logical to adjust conc based on sample_uL and cal_uL headers.
+    #units: ["Response", "ng/mL"]                    # What final units to us for labelling plots and outputting matrix (response, ng/mL, conc, pg/mL, ...)
+    scale_fac: 1                    # Scale factor to apply to output value (e.g set to 1000 for convertingng/mL from TargetLynx to pg/mL output)
+
   data_quality_report:
     execute: True
-
-    fig_scale: 1                                           # multiplier on plot width/height
+    
+    fig_scale: 1                                           # multiplier on per-compound plot width/height (0.7 for small || 1.3 for high quality)
+    
+    interactive_plots: True
 
     summary_head: Sample_type
     qc_real: True
@@ -64,16 +51,14 @@ project: &general
 
     # Per-compound intensity vs injection order (drift visualisation)
     plot_intensity_per_compound: True
-    intensity_plot_levels: ["Sample"]
+    intensity_plot_levels: ["QC", "Sample"]  
     intensity_plot_head: Sample_type
-    intensity_plot_head_ID: Treatment
+    intensity_plot_head_ID: Sample_type
 
-    # Per-compound Q-Q plot (normality check). Uses the same subset filter
-    # as the intensity plot. Caption shows Shapiro-Wilk W and p when 3 ≤ n ≤ 5000.
-    # `qq_transform` may be a single value or a list — list form creates one
-    # report tab per transform (with its own compound dropdown).
+    # Per-compound Q-Q plot (normality check; same subset as intensity plot)
+    # qq_transform: [none, log2]  -> renders one tab per transform
     plot_qq_per_compound: True
-    qq_transform: [none, log2]                             # any of: none | log2 | sqrt
+    qq_transform: [none, log2, sqrt]                             # any of: none | log2 | sqrt
 
     yaxis_quant: 0.95
 
@@ -82,87 +67,52 @@ project: &general
     qc_pca:
       include: True
       color_by: [Injection_order, Chrom_Batch, Sample_type]   # one PCA per coloring
-      levels:  ["Sample"]                                     # filter to these sample-type rows first
+      levels:  ["Sample", "QC"]                                 # include QCs so the PCA can spot QC drift / clustering
       head:    Sample_type
       label:   none                                           # none | all | outliers
       label_factor: Sample_ID
       ellipse: none                                           # none | group
-
-      # Preprocessing applied before prcomp(). Steps are echoed in the
-      # report so the reader sees what went into the PCA.
       preprocess:
-        impute:      min                                      # none | min | half_min | frac_min  (per-feature)
-        impute_frac: 0.2                                      # only used when impute: frac_min  (e.g. 0.2 × per-feature minimum)
-        transform:   log2                                     # none | log2 | sqrt
-        center:      True                                     # mean-centre per feature
-        scale:       True                                     # autoscale (divide by per-feature SD)
+        feat_na_max:   0.6   # drop features missing in >50% of samples
+        sample_na_max: 0.6   # drop samples missing in >80% of features
+        impute:      frac_min                                 # none | min | half_min | frac_min
+        impute_frac: 0.2
+        transform:   log2
+        center:      True
+        scale:       True
 
-  # ====================================================================
-  # Stats report — comparisons, boxplots, correlations, linear models, PCA, volcano.
-  # ====================================================================
   stats_report:
     execute: True
 
     fig_scale: 1                                           # multiplier on plot width/height
+    
+    interactive_plots: True 
 
-    # Biological-sample filter applied to the global summary + global PCA so
-    # blanks / QCs / calibration rows do not pollute them. Per-comparison
-    # sections do their own subsetting via comparisons.subset and are
-    # unaffected. Set head: ~ to disable.
+    # Drop blanks/QCs from the global summary + global PCA (per-comparison
+    # sections do their own subsetting via `comparisons.subset`).
     biological_filter:
       head:   Sample_type
       levels: ["Sample"]
 
-    # Sample-level summary bar plots (raw / log2 / sqrt of summed intensity).
-    # Bars coloured by this metadata factor.
     global_summary_factor: "Treatment"
 
     # ------------------------------------------------------------------
     # Comparisons: categorical group tests.
+    # Each entry filters samples (`subset:`) then tests across `compare.levels`.
     # 2 levels  -> auto t-test + Wilcoxon
-    # 3+ levels -> auto ANOVA + Kruskal-Wallis (+ Tukey post-hoc per pair)
-    #
-    # `subset:` accepts MULTIPLE conditions joined by AND, and each value
-    # may itself be a list (interpreted as %in%). Examples:
-    #     subset: { Treatment: Ctrl }
-    #     subset: { Treatment: Ctrl, Lobe: Right }
-    #     subset: { Treatment: [Ctrl, HDM_Curdlan], Sex: Male }
-    #
-    # Per-entry `enabled: True/False` (default True) toggles a single entry
-    # without deleting it — handy while iterating on the YAML.
+    # 3+ levels -> auto ANOVA + Kruskal-Wallis (+ Tukey / pairwise Wilcoxon post-hoc)
     # ------------------------------------------------------------------
     comparisons:
-      - name: M_vs_F_in_Ctrl
+      - name: Ctrl_vs_HDM_in_WT
         enabled: True
-        subset: { Treatment: Ctrl }
-        compare: { factor: Sex, levels: [Male, Female] }
+        subset: { Type: WT }
+        compare: { factor: Treatment, levels: [PBS, HDM] }
 
-      - name: M_vs_F_in_HDM
+      - name: Ctrl_vs_HDM_in_KO
         enabled: True
-        subset: { Treatment: HDM_Curdlan }
-        compare: { factor: Sex, levels: [Male, Female] }
-
-      - name: Ctrl_vs_HDM_in_Males
-        enabled: True
-        subset: { Sex: Male }
-        compare: { factor: Treatment, levels: [Ctrl, HDM_Curdlan] }
-
-      - name: Ctrl_vs_HDM_in_Females
-        enabled: True
-        subset: { Sex: Female }
-        compare: { factor: Treatment, levels: [Ctrl, HDM_Curdlan] }
-
-      # Multi-key subset example — Ctrl vs HDM in Right-lobe Males only
-      - name: Ctrl_vs_HDM_in_RightLobe_Males
-        enabled: False
-        subset: { Sex: Male, Lobe: Right }
-        compare: { factor: Treatment, levels: [Ctrl, HDM_Curdlan] }
-
-      # Example 3-level comparison — auto ANOVA + Kruskal + Tukey post-hoc
-      # - name: diet_3way
-      #   subset: { Sex: Male }
-      #   compare: { factor: Diet, levels: [HC, MC, LC] }
-
+        subset: { Type: KO }
+        compare: { factor: Treatment, levels: [PBS, HDM] }
+        
     # ------------------------------------------------------------------
     # General per-compound boxplot (independent of `comparisons:`).
     # Use this for free-form inspection by 1+ metadata factors.
@@ -171,73 +121,45 @@ project: &general
     # ------------------------------------------------------------------
     boxplot:
       enabled: True
-      factors: [Treatment, Sex]
+      factors: [Treatment, Type]
       display: tabs                       # combined | tabs
       levels:  ["Sample"]                 # filter to these sample-type rows first
       head:    Sample_type
+      plot_type: both                      # box | bar | both
+      # Bar-plot error bars: SD (default) | SE | none
+      error_bar: SD
 
     # ------------------------------------------------------------------
-    # Correlations: PAIRWISE FEATURE x FEATURE.
-    # Independent of `comparisons:` — uses only its own `subsets:` list.
-    #
-    # `subsets:` is a LIST — each entry produces its own heatmap. Use
-    # `{}` for "all samples".
-    #
+    # Correlations: PAIRWISE FEATURE x FEATURE correlations, one heatmap
+    # per (correlation × subset × method).
+    # `subsets:` is a LIST — each entry produces its own heatmap, e.g.
+    # to compare Ctrl vs HDM_Curdlan correlation structure side-by-side.
     # Output:
-    #   - `correlations` xlsx tab: long table (feature_a, feature_b, r, p)
-    #   - `cor_<name>_<subset>_<method>` xlsx tabs: wide correlation matrix
-    #     (one per subset × method × correlation entry)
-    #   - report: one heatmap per subset × method
-    #
-    # Options:
-    #   enabled:     toggle this entire entry on/off (default True)
-    #   cluster:     reorder heatmap rows/cols by hierarchical clustering
-    #                (distance = 1 - |r|, average linkage) so similar
-    #                features sit together. False = alphabetical order.
-    #   show_values: overlay numeric correlations in heatmap cells.
-    #                Only legible for ≤30 features; auto-suppressed above.
+    #   - `correlations` xlsx tab: long table (feature_a, feature_b, ...)
+    #   - report:                  one heatmap per subset/method
     # ------------------------------------------------------------------
     correlations:
       - name: feature_pairs
         enabled: True
-        methods: [pearson, spearman]
+        methods: [spearman] #[pearson, spearman]
         subsets:
-          - { Treatment: Ctrl }
-          - { Treatment: HDM_Curdlan }
           - { }                               # all samples
-        cluster: True
-        show_values: False
-        include_self: False                   # drop self-self pairs (default). Set True to keep r=1 diagonal.
+        cluster: True                         # hierarchical-cluster the heatmap rows/cols (reorder plot)
+        show_values: False                    # show numeric correlations in cells (busy for >30 features)
 
     # ------------------------------------------------------------------
     # Linear models: feature ~ formula. One row per coefficient term.
-    # Independent of comparisons / correlations.
-    # `enabled: True/False` per entry (default True).
-    #
-    # `subset:` accepts MULTIPLE conditions joined by AND, just like
-    # comparisons.subset (e.g. { Sex: Male, Lobe: Left }).
-    #
-    # Multiple entries can coexist freely — each one fits independently;
-    # adding an interaction model does NOT change the additive one's results.
     # ------------------------------------------------------------------
     linear_models:
-      - name: sex_adjusted_treatment
-        enabled: True
-        formula: "~ Treatment + Sex"          # additive: main effects only
-        subset: { Sample_type: Sample }
-
-      # Same predictors but with the Treatment × Sex interaction.
-      # Adds a `Treatment:Sex` term that asks "does the treatment effect
-      # itself differ between males and females?".
-      - name: treatment_x_sex
-        enabled: True
-        formula: "~ Treatment * Sex"          # = Treatment + Sex + Treatment:Sex
+      - name: type_adjusted_treatment
+        formula: "~ Treatment + type"          # additive (main effects only)
         subset: { Sample_type: Sample }
 
     # ------------------------------------------------------------------
-    # Significance threshold (applied to BH-adjusted p-values).
-    # P-value adjustment is fixed at Benjamini-Hochberg (= FDR).
+    # Multiple-testing + significance
+    # `BH` and `fdr` are aliases in R — pick one. Use `bonferroni` for stricter.
     # ------------------------------------------------------------------
+    p_adjust: BH
     sig_threshold: 0.05
 
     # ------------------------------------------------------------------
@@ -246,55 +168,47 @@ project: &general
     pca:
       include: True
       components: [1, 2]                  # which two PCs to plot (e.g. [2, 3])
-
-      # Optional extra subset for the GLOBAL PCA tab on top of the
-      # biological_filter (multi-key, AND'd). Per-comparison tabs already
-      # use each comparison's own subset, so this only affects "Global".
-      # Example: subset: { Lobe: Left }   to look at the left lobe only.
-      # subset: ~
-
       label: none                         # none | all | outliers
       label_factor: Sample_ID
       ellipse: group                      # none | group
       ellipse_confidence: 0.95
-
-      # Loadings plot rendered below each scores plot. Bars filled by a
-      # feature_metadata column (e.g. Primary, PUFA, Enzyme_1). Set
-      # color_by: ~ to drop colouring; set include: False to skip entirely.
       loadings:
         include:  True
-        color_by: Primary
-
-      # Preprocessing applied before prcomp() (echoed in the report).
+        color_by: Enzymatic_pathway                 # feature_metadata column for bar fill
       preprocess:
+        feat_na_max:   0.6   # drop features missing in >50% of samples
+        sample_na_max: 0.6   # drop samples missing in >80% of features
         impute:      frac_min             # none | min | half_min | frac_min
-        impute_frac: 0.2                  # only used when impute: frac_min  (e.g. 0.2 × per-feature minimum)
+        impute_frac: 0.2                  # 0.2 × per-feature minimum
         transform:   log2                 # none | log2 | sqrt
-        center:      True                 # mean-centre per feature
-        scale:       True                 # autoscale (divide by per-feature SD)
+        center:      True
+        scale:       True
 
-    # ------------------------------------------------------------------
-    # Heatmap (samples × features). Per-feature z-scores by default.
-    # Sample rows are annotated by `color_samples_by`; feature columns are
-    # annotated AND grouped by `group_features_by`, with hierarchical
-    # clustering inside each group block (turn off with cluster_within_groups: False).
-    # ------------------------------------------------------------------
     heatmap:
       include:                True
-      color_samples_by:       Treatment   # any column in sample_metadata
-      group_features_by:      Primary     # any column in feature_metadata; ~ to disable
-      transform:              log2        # none | log2 | sqrt
-      scale:                  z           # z | none
-      cluster_rows:           False       # cluster samples (across the colour-by groups)
-      cluster_within_groups:  True        # cluster features inside each group block
+      orientation:            samples_x          # samples_y (default) | samples_x | auto
+      color_samples_by:       Treatment
+      group_features_by:      Enzymatic_pathway
+      transform:              log2
+      scale:                  z
+      cluster_rows:           False              # cluster the samples axis (rows when samples_y, cols when samples_x)
+      cluster_within_groups:  True
 
     # ------------------------------------------------------------------
     # Volcano: one per 2-group comparison; one per Tukey pair for 3+ group.
     # ------------------------------------------------------------------
     volcano:
       include:      True
-      use_adjusted: False                 # False = raw p (default); True = BH-adjusted p
+      use_adjusted: False                 # False = raw p (default); True = BH-adjusted
       top_n_label:  10
+      
+    ion_ratios:
+      enabled: True
+      ratios:
+        - num:   "13,14-dihydro-15-keto-PGE2"
+          den:   "PGE2"
+          label: "13,14-dihydro-15-keto-PGE2 -- PGE2 ratio"      
+
 
     # ------------------------------------------------------------------
     # Legacy fields (still consumed by older sections — kept for backwards-compat)

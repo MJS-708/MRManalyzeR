@@ -28,7 +28,16 @@ extractTable <- function(lcms_wb, tl_headers) {
     lcms_df = openxlsx::read.xlsx(lcms_wb, sheet = lcms_sheetNames[s])
 
     lcms = lcms_df %>%
-      janitor::row_to_names(row_number = 3, remove_row = FALSE, remove_rows_above = FALSE) %>%
+      janitor::row_to_names(row_number = 3,
+                            remove_row = FALSE, remove_rows_above = FALSE)
+    # Drop any pre-existing column literally named "ID" (e.g. a metadata
+    # column whose row-3 header reads "ID") so the position-based rename
+    # of column 1 to "ID" can't produce duplicate column names. NA column
+    # names (from blank row-3 cells) are kept; only an exact "ID" match drops.
+    .nm   = as.character(colnames(lcms))
+    .keep = is.na(.nm) | .nm != "ID"
+    lcms  = lcms[, .keep, drop = FALSE]
+    lcms = lcms %>%
       dplyr::rename("ID" = 1, "ID2" = 2) %>%
       dplyr::mutate(ID = paste(ID, ID2, sep = ", ")) %>%
       dplyr::select(dplyr::all_of(tl_headers))

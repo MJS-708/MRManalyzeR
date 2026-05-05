@@ -32,6 +32,22 @@ append_stats_xlsx = function(out_xlsx, stats_tables){
     .write_or_replace(wb, sheet_name, df)
   }
 
+  # 1b. Per-comparison stats tabs
+  if(!is.null(stats_tables$stats) && nrow(stats_tables$stats) > 0){
+    for(cn in unique(stats_tables$stats$comparison)){
+      sub = stats_tables$stats[stats_tables$stats$comparison == cn, , drop = FALSE]
+      .write_or_replace(wb, .safe_sheet_name(sprintf("stats_%s", cn)), sub)
+    }
+  }
+
+  # 1c. Per-model linear model tabs
+  if(!is.null(stats_tables$linear_models) && nrow(stats_tables$linear_models) > 0){
+    for(mn in unique(stats_tables$linear_models$model)){
+      sub = stats_tables$linear_models[stats_tables$linear_models$model == mn, , drop = FALSE]
+      .write_or_replace(wb, .safe_sheet_name(sprintf("lm_%s", mn)), sub)
+    }
+  }
+
   # 2. Wide-matrix tabs for correlations (one per subset × method × correlation)
   if(!is.null(stats_tables$correlations) && nrow(stats_tables$correlations) > 0){
     .write_corr_matrix_tabs(wb, stats_tables$correlations)

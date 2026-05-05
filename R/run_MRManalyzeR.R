@@ -47,6 +47,7 @@ run_MRManalyzeR = function(path_yaml){
   st_params = project_params$project$stats_report %||%
                 project_params$project$MVA_report
 
+
   # --- Datatype loop ------------------------------------------------------
   # `datatype` may live in paths: (new) or PeakMatrixProcessing: (legacy).
   # Accept either a scalar ("Area") or a vector (["Area", "Response", "Conc"]).
@@ -95,9 +96,10 @@ run_MRManalyzeR = function(path_yaml){
                       units_tag,
                       project_paths$suffix %||% "")
 
-  out_xlsx = paste0(out_stub, ".xlsx")
-  out_RDS  = paste0(out_stub, ".RDS")
-  out_pars = paste0(out_stub, ".txt")
+  out_xlsx       = paste0(out_stub, ".xlsx")
+  out_stats_xlsx = paste0(out_stub, "_stats.xlsx")
+  out_RDS        = paste0(out_stub, ".RDS")
+  out_pars       = paste0(out_stub, ".txt")
 
   dir.create(project_paths$result_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -127,8 +129,8 @@ run_MRManalyzeR = function(path_yaml){
         length(st_params$linear_models))){
     message("Running statistics...")
     stats_tables = run_stats(combined_datamatrices, st_params)
-    append_stats_xlsx(out_xlsx, stats_tables)
-    message("Wrote stats tabs to: ", out_xlsx)
+    append_stats_xlsx(out_stats_xlsx, stats_tables)
+    message("Wrote stats to: ", out_stats_xlsx)
   }
 
   # --- Optional reports ---------------------------------------------------
@@ -147,10 +149,11 @@ run_MRManalyzeR = function(path_yaml){
     datasetExperiment = combined_datamatrices,
     removed_features  = removed_features,
     stats_tables      = stats_tables,
-    out_xlsx = out_xlsx,
-    out_RDS  = out_RDS,
-    out_pars = out_pars,
-    datatype = datatype
+    out_xlsx       = out_xlsx,
+    out_stats_xlsx = out_stats_xlsx,
+    out_RDS        = out_RDS,
+    out_pars       = out_pars,
+    datatype       = datatype
   ))
 }
 
@@ -264,6 +267,9 @@ run_MRManalyzeR = function(path_yaml){
   render_one = function(rmd_file, out_html, params_block){
 
     rmd_path = system.file("rmd", rmd_file, package = "MRManalyzeR")
+    if (rmd_path == "") {
+      rmd_path = file.path("inst", "rmd", rmd_file)
+    }
     if(rmd_path == ""){
       warning(sprintf("Report template '%s' not found in installed package.",
                       rmd_file))
@@ -308,4 +314,163 @@ run_MRManalyzeR = function(path_yaml){
                paste0(out_stub, "_stats_report.html"),
                st_params)
   }
+}
+
+
+#' Run the combine-mode pipeline from a dedicated combine YAML
+#'
+#' Merges several previously-saved datasets (`.RDS` or `.xlsx` outputs of
+#' [`run_MRManalyzeR()`]) into one `DatasetExperiment`, then runs the
+#' `stats_report` analyses on the merged data. Skips PeakMatrixProcessing
+#' and the data_quality_report.
+#'
+#' Defaults: samples are matched by `Sample_ID` (intersect across inputs);
+#' `feature_meta_cols` and `sample_meta_cols` default to the intersection
+#' of column names across inputs (specify them only to *narrow* the set).
+#'
+#' Outputs:
+#' \itemize{
+#'   \item `<output_stub>.RDS`        — merged `DatasetExperiment`
+#'   \item `<output_stub>.xlsx`       — feature_metadata / sample_metadata / matrix tabs
+#'   \item `<output_stub>_stats.xlsx` — stats / correlations / linear_models
+#'   \item `<output_stub>_stats_report.html`
+#' }
+#'
+#' YAML schema (see `inst/extdata/example_combine_config.yml`):
+#' \preformatted{
+#' combine:
+#'   datasets:
+#'     - path: ".../GOM_..._.RDS"      # .RDS or .xlsx, mix is fine
+#'       tag:  "GOM"
+#'       qc_remap: { "QC1": "QC_pooled" }
+#'     - path: ".../cysLT_..._.xlsx"
+#'       tag:  "cysLT"
+#'   feature_meta_cols: ~              # NULL = intersect across inputs
+#'   sample_meta_cols:  ~              # NULL = intersect across inputs
+#'   prefix_features:   True
+#'   sample_id_col:     Sample_ID
+#'   output_stub:       ".../Combined/combined_HDM"
+#'   units:             "combined"
+#' stats_report:
+#'   execute: True
+#'   comparisons:   [...]
+#'   correlations:  [...]
+#'   linear_models: [...]
+#' }
+#'
+#' @param path_yaml Full path to the combine YAML.
+#' @return Invisibly, a list with the merged `DatasetExperiment`, the
+#'   `stats_tables`, and the output paths.
+#' @export
+run_MRManalyzeR_combine = function(path_yaml){
+
+  stopifnot(file.exists(path_yaml))
+  cfg = load_yaml(path_yaml)
+
+  # Tolerate either a flat top-level layout or a `project:` wrapper.
+  root = cfg$project %||% cfg
+  combine_params = root$combine %||%
+                     stop("[combine] YAML lacks a top-level `combine:` block.")
+  st_params      = root$stats_report %||% list(execute = FALSE)
+
+  ds = combine_params$datasets %||% list()
+  if(!length(ds)) stop("[combine] `combine.datasets:` is empty.")
+
+  paths = vapply(ds, function(d) d$path, character(1))
+  tags  = vapply(ds, function(d) d$tag %||% NA_character_, character(1))
+  if(all(!is.na(tags) & nzchar(tags))) names(paths) = tags
+
+  # Per-dataset config maps — keyed by tag if available, otherwise by path.
+  key_for = function(i) if(!is.na(tags[i]) && nzchar(tags[i])) tags[i] else paths[i]
+  build_map = function(field){
+    out = list()
+    for(i in seq_along(ds)){
+      v = ds[[i]][[field]]
+      if(!is.null(v)) out[[ key_for(i) ]] = v
+    }
+    if(!length(out)) NULL else out
+  }
+  qc_remap_list  = build_map("qc_remap")
+  rename_list    = build_map("feature_meta_rename")
+
+  output_stub = combine_params$output_stub %||%
+                stop("[combine] `combine.output_stub:` is required.")
+  dir.create(dirname(output_stub), recursive = TRUE, showWarnings = FALSE)
+
+  message(sprintf("[combine] Merging %d dataset(s) ...", length(ds)))
+  combined = combine_datasets(
+    paths               = paths,
+    feature_meta_cols   = combine_params$feature_meta_cols,
+    sample_meta_cols    = combine_params$sample_meta_cols,
+    feature_meta_rename = rename_list,
+    qc_remap            = qc_remap_list,
+    sample_id_col       = combine_params$sample_id_col   %||% "Sample_ID",
+    drop_samples        = combine_params$drop_samples,
+    prefix_features     = isTRUE(combine_params$prefix_features),
+    combined_name       = combine_params$combined_name   %||% basename(output_stub)
+  )
+  message(sprintf("[combine] Result: %d samples × %d features.",
+                  nrow(combined$data), ncol(combined$data)))
+
+  out_xlsx       = paste0(output_stub, ".xlsx")
+  out_stats_xlsx = paste0(output_stub, "_stats.xlsx")
+  out_RDS        = paste0(output_stub, ".RDS")
+  out_pars       = paste0(output_stub, ".txt")
+
+  add_info = data.frame(
+    sheet = c("matrix", "matrix"),
+    info  = c("source", "n_input_datasets"),
+    value = c("combine_datasets()", as.character(length(ds)))
+  )
+  .write_output_xlsx(out_xlsx, combined,
+                     removed_features = data.frame(),
+                     add_info          = add_info)
+  saveRDS(combined, file = out_RDS)
+  con = file(out_pars, open = "wt"); on.exit(close(con), add = TRUE)
+  utils::capture.output(print(cfg), file = con)
+  message("Wrote: ", out_xlsx)
+  message("Wrote: ", out_RDS)
+
+  stats_tables = NULL
+  if(isTRUE(st_params$execute) &&
+     (length(st_params$comparisons) || length(st_params$correlations) ||
+        length(st_params$linear_models))){
+    message("[combine] Running statistics on merged data ...")
+    stats_tables = run_stats(combined, st_params)
+    append_stats_xlsx(out_stats_xlsx, stats_tables)
+    message("Wrote stats to: ", out_stats_xlsx)
+  }
+
+  if(isTRUE(st_params$execute)){
+    rmd_path = system.file("rmd", "stats_report.Rmd", package = "MRManalyzeR")
+    if(rmd_path == "")
+      rmd_path = file.path("inst", "rmd", "stats_report.Rmd")
+    pkg_ns = tryCatch(asNamespace("MRManalyzeR"),
+                      error = function(e) globalenv())
+    env = new.env(parent = pkg_ns)
+    units_lbl = combine_params$units %||% "combined"
+    env$project_params        = cfg
+    env$project_paths         = list(datatype = units_lbl)
+    env$pmp_params            = list(units = units_lbl, datatype = units_lbl)
+    env$report_pars           = st_params
+    env$out_RDS               = out_RDS
+    env$combined_datamatrices = combined
+    env$removed_features      = data.frame()
+    env$stats_tables          = stats_tables
+
+    out_html = paste0(output_stub, "_stats_report.html")
+    message("Rendering: ", out_html)
+    rmarkdown::render(input = rmd_path, output_file = out_html,
+                      envir = env, quiet = TRUE)
+  }
+
+  invisible(list(
+    datasetExperiment = combined,
+    stats_tables      = stats_tables,
+    out_xlsx          = out_xlsx,
+    out_stats_xlsx    = out_stats_xlsx,
+    out_RDS           = out_RDS,
+    out_pars          = out_pars,
+    n_input_datasets  = length(ds)
+  ))
 }

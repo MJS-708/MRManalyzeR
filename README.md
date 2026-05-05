@@ -1,91 +1,161 @@
 # MRManalyzeR
-Tools to process and analyze targeted lipidomics and metabolomics data - based on the TargetLynx format from Waters. Primarily for internal use at Wheelock lab, Karolinska Institute, Sweden.
+
+Process and analyse targeted lipidomics / metabolomics data exported from
+Waters TargetLynx. Reads the TargetLynx xlsx workbook, builds a peak-area
+or concentration matrix (with optional SNR filtering, blank filtering,
+missing-value imputation, normalisation and batch correction) and renders
+self-contained HTML reports for data quality and statistical inference.
+Driven from a single YAML config — no driver script needed.
+
+Primarily for internal use at the Wheelock lab, Karolinska Institutet
+(Sweden).
+
+---
 
 ## Installation
 
-Install the latest release from GitHub:
+Latest release:
 
 ```r
 # install.packages("remotes")
 remotes::install_github("MJS-708/MRManalyzeR", ref = "main")
 ```
 
-For the development version:
+Development branch:
 
 ```r
 remotes::install_github("MJS-708/MRManalyzeR", ref = "dev")
 ```
 
-Local development install:
+Local install (from a cloned working copy):
 
 ```r
 devtools::install("path/to/MRManalyzeR")
 ```
 
-## Quick start
+---
 
-Run the built-in example to verify your installation. The example uses a
-published dataset of control and house dust mite challenged mice, with
-several oxylipins (negative-ion mode):
+## Quick start — bundled example
 
-```r
-MRManalyzeR::run_example()
-```
-
-This renders a HTML report for data quality assessment
-and for standard statistical analysis. These open in
-directly in the RStudio viewer.
-No file paths to configure.
-
-## Usage
-
-### Step 1 — Prepare the data .xlsx
-
-The .xlsx file contain at least 3 sheets;
-
-feature_metadata
-- Contains all features in your analysis under `processing_name` which maps to `compound` the
-name to report.
-- Ensure Report header is populated with“YES” or “NO” for each compound based on manual
-interpretation of the LC-MS/MS peak in TargetLynx (or similar). 
-
-sample_metadata
-- Containing all acquisition names from the TargetLynx file - they must be unchanged and match lcms_data_n
-- Add any relavent study metadata for assessing data quality (e.g., injection order, extraction batch)
-or statistical analysis (e.g., sex, treatment etc).
-
-lcms_data_1
-- This sheet must contain your complete summary from your Target Lynx file. 
-- Additional lcms_data_n can be added, however all lcms_data sheets must have same features.
-
-
-### Step 2 - Modify the YAML
-
-Processing and analysis of the MRM data is configured via paramaeters in a YAML file
-including (not exhaustive list):
-- Paths and filenames to the data .xlsx curated in step 1 and where to save results
-- PeakMatrixProcessing parameters including S/N thresholds, MV imputation,
-batch correction, normalization
-- Parameters for generating `data_quality_report` plots to assess CVs, signal drift and
-correlation with study design (e.g., injection order).
-- Parameters for generating `stats_report` plots to assess changes in data based upon 
-study design (e.g., treatment) using PCA, boxplots etc.
-
-A template YAML config is provided:
+Run the pipeline against a small bundled oxylipin dataset to verify the
+install and produce both reports. No paths to configure:
 
 ```r
-file.copy(system.file("config_template.yaml", package = "MRManalyzeR"), "config.yaml")
+res <- MRManalyzeR::run_example()
+attr(res, "results_dir")    # where the xlsx + html reports were written
 ```
 
-### Step 3 — Run the workflow via YAML
+`run_example()` copies the bundled YAML, points it at
+`inst/extdata/example_data.xlsx` and a fresh `tempdir()`, runs
+`run_MRManalyzeR()`, and (in interactive sessions) opens the rendered
+HTML reports in the RStudio viewer / default browser.
 
-The data can be processed and analyzed with a single command:
+### Example dataset
+
+A subset of the BAL fluid oxylipin panel from **Kolmert *et al.* (2018),
+*Prostaglandins & Other Lipid Mediators* 137, 11–18.**
+DOI: <https://doi.org/10.1016/j.prostaglandins.2018.05.005>.
+
+The bundled xlsx (`inst/extdata/example_data.xlsx`) contains a
+TargetLynx-style workbook with `feature_metadata`, `sample_metadata` and
+`lcms_data_*` sheets; the bundled YAML (`inst/extdata/example_config.yml`)
+is annotated and ready to copy as a starting point for your own studies.
+
+---
+
+## Usage on your own data
+
+### Step 1 — prepare the data xlsx
+
+The input workbook needs at least three sheets:
+
+* **`feature_metadata`** — one row per compound. Required columns:
+  `Processing_name` (TargetLynx ID, used internally), `Compound`
+  (display name), and `Report` populated with `YES` / `NO` based on
+  manual peak interpretation.
+* **`sample_metadata`** — one row per acquisition. The acquisition name
+  must match the TargetLynx export exactly. Add any study metadata you
+  want available for QC plots and statistics (e.g. `Injection_order`,
+  `Chrom_Batch`, `Sex`, `Treatment`, `Sample_type`).
+* **`lcms_data_1`** (and optionally `lcms_data_2`, …) — the TargetLynx
+  summary table. All `lcms_data_*` sheets must share the same feature set.
+
+### Step 2 — copy and edit the YAML template
 
 ```r
-res <- MRManalyzeR::run_MRManalyzeR("path/to/config.yaml")
+file.copy(
+  system.file("extdata", "example_config.yml", package = "MRManalyzeR"),
+  "config.yml"
+)
 ```
 
-This will:
-1. Load and process all data defined in the YAML - saving a results.xlsx with a processed matrix
-and statistics tables.
-2. Generate the `data_quality_report` and `stats_report` (as .html)
+Then edit `config.yml`. The key blocks are:
+
+| Block | Purpose |
+|---|---|
+| `paths:` | input xlsx location, output directory, datatype to report (`Area` / `Response` / `ng/mL` / …) |
+| `PeakMatrixProcessing:` | SNR threshold, blank/MV filters, batch correction, normalisation |
+| `data_quality_report:` | per-compound intensity-vs-injection-order plots, QQ plots, QC PCA |
+| `stats_report:` | comparisons (auto t-test/Wilcoxon/ANOVA), boxplots, correlations, linear models, PCA, volcano, ion ratios, heatmap |
+
+Every option is documented inline in the bundled YAML — read it once
+before editing.
+
+### Step 3 — run
+
+```r
+res <- MRManalyzeR::run_MRManalyzeR("config.yml")
+```
+
+This writes:
+
+* `<fn>_<datatype>_.xlsx` — processed peak matrix + the resolved YAML
+  parameters
+* `<fn>_<datatype>__stats.xlsx` — `stats`, `correlations`, `linear_models`
+  tabs from the comparisons defined in the YAML
+* `<fn>_<datatype>__data_quality_report.html`
+* `<fn>_<datatype>__stats_report.html`
+
+To re-render reports from an already-processed RDS (skipping the xlsx
+ingest), set `PeakMatrixProcessing.execute: False` and re-run.
+
+---
+
+## Combining multiple acquisitions
+
+To merge separately-acquired panels (e.g. GOM, cysLT, SPM, or PL-pos /
+PL-neg / SL) sharing biological samples, use the combine workflow:
+
+```r
+file.copy(
+  system.file("extdata", "example_combine_config.yml", package = "MRManalyzeR"),
+  "combine_config.yml"
+)
+res <- MRManalyzeR::run_MRManalyzeR_combine("combine_config.yml")
+```
+
+The combine YAML lists per-panel paths (`.RDS` or `.xlsx`), optional QC
+remappings (e.g. SL `QC1..5` ↔ PL `QC1, QC2, QC5, QC7, QC8`), feature
+prefixing, and the same `stats_report:` block as a regular run.
+`PeakMatrixProcessing` and the data quality report are skipped — the
+inputs are already-processed matrices.
+
+---
+
+## Reports
+
+Both reports are self-contained HTML with tabset navigation and (by
+default) plotly hover tooltips that surface `Sample_ID` on points and
+boxplot jitter. Toggle off with `interactive_plots: False` in either
+report block of the YAML.
+
+| Report | Sections |
+|---|---|
+| `data_quality_report` | sample summary; per-compound intensity vs injection order; per-compound Q-Q normality; QC PCA (one tab per coloring) |
+| `stats_report` | global summaries; per-comparison p-value tables; per-compound boxplots (faceted across comparisons + by free-form factor); per-comparison PCA (scores + loadings); volcano; ion ratios (e.g. EpOME/DiHOME for sEH activity); samples × features heatmap; correlations; linear models |
+
+---
+
+## License
+
+See `LICENSE`.

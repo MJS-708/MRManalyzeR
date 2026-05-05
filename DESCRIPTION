@@ -34,7 +34,8 @@ Imports:
     rmarkdown,
     knitr,
     htmltools,
-    DT
+    DT,
+    plotly
 Suggests:
     cowplot,
     gridExtra,

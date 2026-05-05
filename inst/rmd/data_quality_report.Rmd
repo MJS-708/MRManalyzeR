@@ -58,7 +58,11 @@ fig_scale                   = as.numeric(report_pars$fig_scale %||% 1)
 # QC PCA config
 qc_pca_include = isTRUE(report_pars$qc_pca$include  %||% FALSE)
 qc_pca_color   = report_pars$qc_pca$color_by        %||% character(0)
-qc_pca_levels  = report_pars$qc_pca$levels          %||% c("Sample")
+# Default INCLUDES the QC sample type so the QC PCA shows QCs alongside
+# samples (drift / batch / clustering checks). Override via
+# stats_report.qc_pca.levels: in YAML.
+qc_pca_levels  = report_pars$qc_pca$levels          %||%
+                   unique(c("Sample", qc_label))
 qc_pca_head    = report_pars$qc_pca$head            %||% "Sample_type"
 qc_pca_label   = report_pars$qc_pca$label           %||% "none"
 qc_pca_label_factor = report_pars$qc_pca$label_factor %||% "Sample_ID"
@@ -66,11 +70,64 @@ qc_pca_ellipse = report_pars$qc_pca$ellipse         %||% "none"
 
 # Preprocessing for QC PCA (with sensible defaults)
 qc_pca_pp = report_pars$qc_pca$preprocess %||% list()
-qc_pca_impute      = qc_pca_pp$impute      %||% "min"
-qc_pca_impute_frac = as.numeric(qc_pca_pp$impute_frac %||% 0.5)
-qc_pca_transform   = qc_pca_pp$transform   %||% "log2"
-qc_pca_center      = isTRUE(qc_pca_pp$center %||% TRUE)
-qc_pca_scale       = isTRUE(qc_pca_pp$scale  %||% TRUE)
+qc_pca_impute        = qc_pca_pp$impute        %||% "min"
+qc_pca_impute_frac   = as.numeric(qc_pca_pp$impute_frac %||% 0.5)
+qc_pca_transform     = qc_pca_pp$transform     %||% "log2"
+qc_pca_center        = isTRUE(qc_pca_pp$center %||% TRUE)
+qc_pca_scale         = isTRUE(qc_pca_pp$scale  %||% TRUE)
+qc_pca_feat_na_max   = as.numeric(qc_pca_pp$feat_na_max   %||% 1)
+qc_pca_sample_na_max = as.numeric(qc_pca_pp$sample_na_max %||% 1)
+
+# Interactive plotting (plotly hover tooltips). Default ON. Set
+# `data_quality_report.interactive_plots: False` in YAML to fall back to png.
+interactive_plots = isTRUE(report_pars$interactive_plots %||% TRUE) &&
+                    requireNamespace("plotly", quietly = TRUE)
+
+.show_plot = function(p, lock_aspect = FALSE, legend_below = FALSE,
+                      max_width = NULL, pixel_height = NULL){
+  if(interactive_plots){
+    w = plotly::ggplotly(p, tooltip = "text", height = pixel_height)
+    if(isTRUE(lock_aspect))
+      w = plotly::layout(w, yaxis = list(scaleanchor = "x", scaleratio = 1))
+    if(isTRUE(legend_below)){
+      w = plotly::layout(w,
+                         margin = list(b = 170, t = 40),
+                         legend = list(orientation = "h",
+                                       x = 0.5, xanchor = "center",
+                                       y = -0.40, yanchor = "top"))
+      # Continuous colorbars (Injection_order, numeric Chrom_Batch) live on
+      # each trace's `marker.colorbar`. Walk the figure data and only modify
+      # traces that already carry a colorbar — discrete-color traces don't,
+      # so they remain untouched (avoids the phantom-colorbar bug).
+      for(.i in seq_along(w$x$data)){
+        .mk = w$x$data[[.i]]$marker
+        if(isTRUE(.mk$showscale) || !is.null(.mk$colorscale)){
+          if(is.null(w$x$data[[.i]]$marker$colorbar))
+            w$x$data[[.i]]$marker$colorbar = list()
+          w$x$data[[.i]]$marker$colorbar$orientation = "h"
+          w$x$data[[.i]]$marker$colorbar$x          = 0.5
+          w$x$data[[.i]]$marker$colorbar$xanchor    = "center"
+          w$x$data[[.i]]$marker$colorbar$y          = -0.30
+          w$x$data[[.i]]$marker$colorbar$yanchor    = "top"
+          w$x$data[[.i]]$marker$colorbar$len        = 0.7
+          w$x$data[[.i]]$marker$colorbar$thickness  = 14
+        }
+      }
+    }
+    w = plotly::config(w, displaylogo = FALSE,
+                       modeBarButtonsToRemove = c("lasso2d", "select2d"))
+    tags = htmltools::as.tags(w, standalone = FALSE)
+    deps = htmltools::findDependencies(tags)
+    if(length(deps)) knitr::knit_meta_add(list(deps))
+    html_str = as.character(tags)
+    if(!is.null(max_width))
+      html_str = sprintf('<div style="max-width:%s;margin:0 auto;">%s</div>',
+                         max_width, html_str)
+    cat(html_str)
+  } else {
+    print(p)
+  }
+}
 
 # Pre-built theme reused across the per-compound loop
 compound_theme = ggplot2::theme_classic() +
@@ -142,7 +199,14 @@ keep = metadata[[intensity_plot_head]] %in% intensity_plot_levels
 inj_data = data_matrix[keep, , drop = FALSE]
 inj_data$injection_order = if("Injection_order" %in% colnames(metadata))
   metadata$Injection_order[keep] else seq_len(nrow(inj_data))
-inj_data$type = metadata[[intensity_plot_head_ID]][keep]
+# Colour-by factor; coalesce NA values to the Sample_type label so e.g.
+# QC injections (which usually have no Treatment) show up as "QC" rather
+# than legend group "NA" when colouring by Treatment.
+inj_data$type = as.character(metadata[[intensity_plot_head_ID]][keep])
+.fallback     = as.character(metadata[[intensity_plot_head]][keep])
+inj_data$type[is.na(inj_data$type)] = .fallback[is.na(inj_data$type)]
+inj_data$.sample_id = if("Sample_ID" %in% colnames(metadata))
+  as.character(metadata$Sample_ID[keep]) else rownames(inj_data)
 
 make_safe_id = function(x) gsub("[^A-Za-z0-9_\\-]", "_", x)
 safe_ids = vapply(compound_names, make_safe_id, character(1))
@@ -168,7 +232,13 @@ function showCompoundPlot(id){
   var plots = document.querySelectorAll(".compound_plot_block");
   for (var i=0; i<plots.length; i++) { plots[i].style.display = "none"; }
   var el = document.getElementById("plot_" + id);
-  if (el) el.style.display = "block";
+  if (el) {
+    el.style.display = "block";
+    if (window.Plotly){
+      var pls = el.querySelectorAll(".plotly-graph-div");
+      for (var j=0; j<pls.length; j++) Plotly.Plots.resize(pls[j]);
+    }
+  }
 }
 </script>
 ')
@@ -177,12 +247,18 @@ for(i in seq_along(compound_names)){
   compound = compound_names[i]
   cid      = safe_ids[i]
   axis_limit = quantile(inj_data[[compound]], prob = yaxis_quant, na.rm = TRUE) * 1.3
+  inj_data$.tooltip = sprintf("Sample: %s<br>%s: %s<br>Order: %s<br>%s: %.3g",
+                              inj_data$.sample_id, intensity_plot_head_ID,
+                              as.character(inj_data$type),
+                              as.character(inj_data$injection_order),
+                              compound, inj_data[[compound]])
 
   p = ggplot2::ggplot(inj_data,
                       ggplot2::aes(injection_order, .data[[compound]])) +
-        ggplot2::geom_point(ggplot2::aes(color = type), size = 3, alpha = 0.6) +
+        ggplot2::geom_point(ggplot2::aes(color = type, text = .tooltip),
+                            size = 3, alpha = 0.6) +
         ggplot2::scale_color_brewer(palette = "Set1", na.value = "grey60") +
-        ggplot2::ylim(c(0, axis_limit)) +
+        ggplot2::coord_cartesian(ylim = c(0, axis_limit)) +
         ggplot2::labs(x = "Injection order", y = units, title = compound) +
         compound_theme
 
@@ -190,7 +266,7 @@ for(i in seq_along(compound_names)){
   display = if(safe_ids[i] == .safe_ids_alpha[1]) "block" else "none"
   cat(sprintf('<div class="compound_plot_block" id="plot_%s" style="display:%s;">\n',
               cid, display))
-  print(p)
+  .show_plot(p, legend_below = TRUE)
   cat("</div>\n")
 }
 ```
@@ -303,12 +379,28 @@ keep = metadata[[qc_pca_head]] %in% qc_pca_levels
 X = as.matrix(data_matrix[keep, , drop = FALSE])
 smeta_pca = metadata[keep, , drop = FALSE]
 
+# Ensure shared rownames on X and smeta_pca so we can re-align after the
+# PCA pipeline drops samples via `sample_na_max`.
+.qc_rn = if(!is.null(rownames(X)) && !anyDuplicated(rownames(X))) {
+  rownames(X)
+} else {
+  paste0("qc_pca_", seq_len(nrow(X)))
+}
+rownames(X)         = .qc_rn
+rownames(smeta_pca) = .qc_rn
+
 res_pca = run_pca_pipeline(X,
-                           impute      = qc_pca_impute,
-                           impute_frac = qc_pca_impute_frac,
-                           transform   = qc_pca_transform,
-                           center      = qc_pca_center,
-                           scale       = qc_pca_scale)
+                           impute        = qc_pca_impute,
+                           impute_frac   = qc_pca_impute_frac,
+                           transform     = qc_pca_transform,
+                           center        = qc_pca_center,
+                           scale         = qc_pca_scale,
+                           feat_na_max   = qc_pca_feat_na_max,
+                           sample_na_max = qc_pca_sample_na_max)
+
+# Realign metadata to the samples that survived sample_na_max filtering.
+if(!is.null(res_pca$pr))
+  smeta_pca = smeta_pca[rownames(res_pca$pr$x), , drop = FALSE]
 
 # Show what was actually applied
 cat("**Preprocessing pipeline applied:**\n\n")
@@ -347,7 +439,12 @@ if(is.null(res_pca$pr)){
               col_name %in% c("Injection_order", "Run_order"))
     if(is_num) sc$.color = as.numeric(sc$.color)
 
-    p = ggplot2::ggplot(sc, ggplot2::aes(PC1, PC2)) +
+    sc$.tooltip = sprintf("%s: %s<br>%s: %s<br>PC1: %.3g<br>PC2: %.3g",
+                          qc_pca_label_factor, sc$.label,
+                          col_name, as.character(sc$.color),
+                          sc$PC1, sc$PC2)
+
+    p = ggplot2::ggplot(sc, ggplot2::aes(PC1, PC2, text = .tooltip)) +
           ggplot2::geom_point(ggplot2::aes(color = .color), size = 3, alpha = 0.85) +
           ggplot2::labs(x = vx, y = vy, color = col_name) +
           ggplot2::theme_classic(base_size = 13) +
@@ -375,7 +472,9 @@ if(is.null(res_pca$pr)){
                                    size = 2.5, vjust = -1, show.legend = FALSE)
     }
 
-    print(p); cat("\n\n")
+    .show_plot(p, lock_aspect = TRUE, legend_below = TRUE,
+               max_width = "650px", pixel_height = 650)
+    cat("\n\n")
   }
 }
 ```
@@ -407,5 +506,12 @@ if(!is.null(removed_features) && nrow(removed_features) > 0){
 # 8. Session info
 
 ```{r session}
-sessionInfo()
+tryCatch(sessionInfo(), error = function(e){
+  cat("sessionInfo() failed (likely a malformed DESCRIPTION in an installed package):\n")
+  cat(conditionMessage(e), "\n\n")
+  cat("R version:", R.version$version.string, "\n")
+  cat("Platform :", R.version$platform, "\n")
+  cat("Loaded packages:\n")
+  cat(paste(" ", sort(loadedNamespaces()), collapse = "\n"), "\n")
+})
 ```
