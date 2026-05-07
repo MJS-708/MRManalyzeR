@@ -406,7 +406,7 @@ run_MRManalyzeR_combine = function(path_yaml){
     qc_remap            = qc_remap_list,
     sample_id_col       = combine_params$sample_id_col   %||% "Sample_ID",
     drop_samples        = combine_params$drop_samples,
-    prefix_features     = isTRUE(combine_params$prefix_features),
+    prefix_features     = combine_params$prefix_features %||% FALSE,
     combined_name       = combine_params$combined_name   %||% basename(output_stub)
   )
   message(sprintf("[combine] Result: %d samples × %d features.",

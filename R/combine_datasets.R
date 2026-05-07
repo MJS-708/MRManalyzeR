@@ -88,6 +88,28 @@ combine_datasets = function(paths,
     smeta = as.data.frame(de$sample_meta)
     vmeta = as.data.frame(de$variable_meta)
 
+    # 0. Force per-dataset alignment between data columns and variable_meta
+    #    rows. The S4 DatasetExperiment may store these in separate slots that
+    #    can drift (especially for older RDS files). Use Compound as the join
+    #    key when available; fall back to positional alignment only when the
+    #    counts match exactly.
+    if(!identical(as.character(rownames(vmeta)),
+                  as.character(colnames(dat)))){
+      cn = colnames(dat)
+      if("Compound" %in% colnames(vmeta) &&
+         all(cn %in% as.character(vmeta$Compound))){
+        idx                = match(cn, as.character(vmeta$Compound))
+        vmeta              = vmeta[idx, , drop = FALSE]
+        rownames(vmeta)    = cn
+      } else if(nrow(vmeta) == ncol(dat)){
+        rownames(vmeta) = cn
+      } else {
+        stop(sprintf(
+          "[combine_datasets] '%s': cannot align variable_meta (%d rows) to data (%d cols). Compound column missing or values don't match data colnames.",
+          tag, nrow(vmeta), ncol(dat)))
+      }
+    }
+
     # 1. Deduplication: any sample type can have a repeated Sample_ID (repeated
     # QC injections, data-entry errors, etc.). Collapse to first occurrence and
     # log which IDs were affected. The combine only needs each ID once; blanks
