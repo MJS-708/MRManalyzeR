@@ -35,9 +35,12 @@
 #'   across datasets. Default `"Sample_ID"`.
 #' @param drop_samples Character vector of `Sample_ID`s to exclude from the
 #'   merged result.
-#' @param prefix_features Logical — if `TRUE`, prefix each feature name
-#'   with the dataset's tag (e.g. `GOM__PGE2`) to avoid duplicated feature
-#'   names across panels.
+#' @param prefix_features Controls feature-name prefixing. `FALSE` (default):
+#'   never prefix. `TRUE`: always prefix every feature with its dataset tag
+#'   (e.g. `GOM__PGE2`). `"auto"`: prefix only features whose names collide
+#'   across two or more inputs — note that the resulting names depend on which
+#'   datasets are combined, so `"auto"` is not stable across different combine
+#'   runs.
 #' @param combined_name Name attribute of the resulting `DatasetExperiment`.
 #' @return A single `struct::DatasetExperiment` containing the merged data.
 #' @export
@@ -49,11 +52,15 @@ combine_datasets = function(paths,
                             qc_regex            = "^QC",
                             sample_id_col       = "Sample_ID",
                             drop_samples        = NULL,
-                            prefix_features     = FALSE,
+                            prefix_features     = FALSE,   # FALSE | TRUE | "auto"
                             combined_name       = "combined"){
 
   stopifnot(length(paths) >= 1)
   stopifnot(all(file.exists(paths)))
+  if(!identical(prefix_features, FALSE) &&
+     !identical(prefix_features, TRUE)  &&
+     !identical(prefix_features, "auto"))
+    stop("[combine_datasets] prefix_features must be FALSE, TRUE, or \"auto\".")
 
   # Tags used for feature prefixing + lookup in the per-dataset config lists.
   tags = if(!is.null(names(paths)) && all(nzchar(names(paths))))
@@ -119,16 +126,6 @@ combine_datasets = function(paths,
     vmr = .pick_per_dataset(feature_meta_rename, p, tag)
     if(length(vmr)) vmeta = .rename_cols(vmeta, vmr)
 
-    # 3. Optional feature prefix to avoid name collisions across panels
-    if(isTRUE(prefix_features)){
-      old_feats = colnames(dat)
-      new_feats = paste0(tag, "__", old_feats)
-      colnames(dat) = new_feats
-      if("Compound" %in% colnames(vmeta))
-        vmeta$Compound = new_feats
-      rownames(vmeta) = new_feats
-    }
-
     # 4. Canonicalise sample rownames to the chosen ID column
     sid = as.character(smeta[[sample_id_col]])
     if(anyNA(sid) || any(!nzchar(sid)) || anyDuplicated(sid))
@@ -140,6 +137,25 @@ combine_datasets = function(paths,
     dats[[i]]   = dat
     smetas[[i]] = smeta
     vmetas[[i]] = vmeta
+  }
+
+  # 3b. Apply prefixing now that all datasets are loaded.
+  #     "auto": only prefix features that appear in more than one dataset.
+  if(!isFALSE(prefix_features)){
+    all_feats   = unlist(lapply(dats, colnames))
+    dup_feats   = unique(all_feats[duplicated(all_feats)])
+    for(i in seq_along(dats)){
+      tag       = tags[i]
+      old_feats = colnames(dats[[i]])
+      to_prefix = if(isTRUE(prefix_features)) rep(TRUE, length(old_feats))
+                  else old_feats %in% dup_feats
+      if(!any(to_prefix)) next
+      new_feats = ifelse(to_prefix, paste0(tag, "__", old_feats), old_feats)
+      colnames(dats[[i]])  = new_feats
+      if("Compound" %in% colnames(vmetas[[i]]))
+        vmetas[[i]]$Compound[to_prefix] = new_feats[to_prefix]
+      rownames(vmetas[[i]]) = new_feats
+    }
   }
 
   # 5. Resolve column lists — intersect-by-default
