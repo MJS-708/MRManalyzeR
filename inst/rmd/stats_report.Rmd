@@ -248,17 +248,6 @@ boxplot_theme = ggplot2::theme_classic() +
 }
 ```
 
-```{r logo}
-logo_path = system.file("rmd", "imp_logo.jpg", package = "MRManalyzeR")
-if(nzchar(logo_path)){
-  htmltools::img(
-    src   = knitr::image_uri(logo_path),
-    alt   = "logo",
-    style = "position:absolute; top:0; right:0; padding:70px;"
-  )
-}
-```
-
 # 1. Aim
 
 Statistical analysis of processed `r units` data. Pre-defined comparisons,
