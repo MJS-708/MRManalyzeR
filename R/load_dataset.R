@@ -58,6 +58,19 @@ load_dataset = function(path, sample_id_col = "Sample_ID"){
     if("Compound" %in% colnames(fmeta))
       rownames(fmeta) = as.character(fmeta$Compound)
 
+    # Ensure variable_meta rows are in the same order as matrix columns —
+    # SummarizedExperiment requires this and the two sheets aren't guaranteed
+    # to be in lockstep.
+    if(all(colnames(M) %in% rownames(fmeta))){
+      fmeta = fmeta[colnames(M), , drop = FALSE]
+    } else if(nrow(fmeta) == ncol(M)){
+      rownames(fmeta) = colnames(M)
+    } else {
+      stop(sprintf(
+        "[load_dataset] %s: cannot align feature_metadata to matrix columns (%d vs %d).",
+        path, nrow(fmeta), ncol(M)))
+    }
+
     return(struct::DatasetExperiment(
       name          = tools::file_path_sans_ext(basename(path)),
       data          = as.data.frame(M),

@@ -149,12 +149,18 @@ combine_datasets = function(paths,
       old_feats = colnames(dats[[i]])
       to_prefix = if(isTRUE(prefix_features)) rep(TRUE, length(old_feats))
                   else old_feats %in% dup_feats
-      if(!any(to_prefix)) next
       new_feats = ifelse(to_prefix, paste0(tag, "__", old_feats), old_feats)
-      colnames(dats[[i]])  = new_feats
-      if("Compound" %in% colnames(vmetas[[i]]))
+
+      # Update colnames(dat) and rownames(vmeta) every iteration so they
+      # are guaranteed to be in lockstep, even when no prefixing happens.
+      colnames(dats[[i]])    = new_feats
+      rownames(vmetas[[i]])  = new_feats
+      if("Compound" %in% colnames(vmetas[[i]])){
+        # Coerce to character so factor inputs don't silently become NA when
+        # we assign a new (prefixed) level.
+        vmetas[[i]]$Compound = as.character(vmetas[[i]]$Compound)
         vmetas[[i]]$Compound[to_prefix] = new_feats[to_prefix]
-      rownames(vmetas[[i]]) = new_feats
+      }
     }
   }
 
@@ -187,6 +193,26 @@ combine_datasets = function(paths,
   data_combined  = do.call(cbind, lapply(dats,   function(d) d[common, , drop = FALSE]))
   vmeta_combined = do.call(rbind, vmetas)
   smeta_combined = smetas[[1]][common, sample_meta_cols, drop = FALSE]
+
+  # Sanity check: SummarizedExperiment requires assay dimnames to line up
+  # with rowData/colData rownames. Catch mismatches here with a useful
+  # message rather than the cryptic SE constructor error.
+  if(!identical(colnames(data_combined), rownames(vmeta_combined))){
+    bad = which(colnames(data_combined) != rownames(vmeta_combined))
+    stop(sprintf(
+      "[combine_datasets] Internal alignment failure: %d feature(s) have ",
+      length(bad)),
+      "mismatching colnames(data) vs rownames(variable_meta). ",
+      "First mismatch: data='", colnames(data_combined)[bad[1]],
+      "' vs vmeta='", rownames(vmeta_combined)[bad[1]], "'.")
+  }
+  if(anyDuplicated(colnames(data_combined))){
+    dups = unique(colnames(data_combined)[duplicated(colnames(data_combined))])
+    stop("[combine_datasets] Combined data has duplicate feature names: ",
+         paste(head(dups, 10), collapse = ", "),
+         if(length(dups) > 10) sprintf(" ... (%d total)", length(dups)) else "",
+         ". Use prefix_features=TRUE (or \"auto\") to disambiguate.")
+  }
 
   struct::DatasetExperiment(
     name          = combined_name,
