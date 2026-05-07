@@ -199,12 +199,22 @@ combine_datasets = function(paths,
   # message rather than the cryptic SE constructor error.
   if(!identical(colnames(data_combined), rownames(vmeta_combined))){
     bad = which(colnames(data_combined) != rownames(vmeta_combined))
+    # Attribute each mismatched position back to its source dataset
+    # by tracking cumulative feature counts per panel.
+    nfeat_per = vapply(dats, ncol, integer(1))
+    cuts      = cumsum(nfeat_per)
+    src_idx   = findInterval(bad, c(0, cuts[-length(cuts)]) + 1)
+    show      = head(seq_along(bad), 10)
+    lines = vapply(show, function(k){
+      i = bad[k]; di = src_idx[k]
+      sprintf("  [%s] pos %d: data='%s' vs vmeta='%s'",
+              tags[di], i, colnames(data_combined)[i],
+              rownames(vmeta_combined)[i])
+    }, character(1))
     stop(sprintf(
-      "[combine_datasets] Internal alignment failure: %d feature(s) have ",
-      length(bad)),
-      "mismatching colnames(data) vs rownames(variable_meta). ",
-      "First mismatch: data='", colnames(data_combined)[bad[1]],
-      "' vs vmeta='", rownames(vmeta_combined)[bad[1]], "'.")
+      "[combine_datasets] Internal alignment failure: %d feature(s) have mismatching colnames(data) vs rownames(variable_meta). This usually indicates the xlsx 'matrix' and 'feature_metadata' sheets disagree on names/order for one of the inputs. Mismatches:\n%s%s",
+      length(bad), paste(lines, collapse = "\n"),
+      if(length(bad) > 10) sprintf("\n  ... (%d more)", length(bad) - 10) else ""))
   }
   if(anyDuplicated(colnames(data_combined))){
     dups = unique(colnames(data_combined)[duplicated(colnames(data_combined))])

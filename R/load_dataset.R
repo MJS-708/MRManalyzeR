@@ -58,17 +58,17 @@ load_dataset = function(path, sample_id_col = "Sample_ID"){
     if("Compound" %in% colnames(fmeta))
       rownames(fmeta) = as.character(fmeta$Compound)
 
-    # Ensure variable_meta rows are in the same order as matrix columns —
-    # SummarizedExperiment requires this and the two sheets aren't guaranteed
-    # to be in lockstep.
+    # Ensure variable_meta rows are in the same order as matrix columns.
+    # Reorder by name when possible; otherwise error out loudly so the user
+    # can fix the input rather than getting silent misalignment downstream.
     if(all(colnames(M) %in% rownames(fmeta))){
       fmeta = fmeta[colnames(M), , drop = FALSE]
-    } else if(nrow(fmeta) == ncol(M)){
-      rownames(fmeta) = colnames(M)
     } else {
+      missing_in_fmeta = setdiff(colnames(M), rownames(fmeta))
       stop(sprintf(
-        "[load_dataset] %s: cannot align feature_metadata to matrix columns (%d vs %d).",
-        path, nrow(fmeta), ncol(M)))
+        "[load_dataset] %s: %d matrix column(s) have no matching row in feature_metadata$Compound (e.g. %s). Fix the xlsx so matrix headers and feature_metadata$Compound use identical names.",
+        path, length(missing_in_fmeta),
+        paste(head(missing_in_fmeta, 5), collapse = ", ")))
     }
 
     return(struct::DatasetExperiment(
