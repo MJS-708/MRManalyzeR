@@ -248,17 +248,6 @@ boxplot_theme = ggplot2::theme_classic() +
 }
 ```
 
-```{r logo}
-logo_path = system.file("rmd", "imp_logo.jpg", package = "MRManalyzeR")
-if(nzchar(logo_path)){
-  htmltools::img(
-    src   = knitr::image_uri(logo_path),
-    alt   = "logo",
-    style = "position:absolute; top:0; right:0; padding:70px;"
-  )
-}
-```
-
 # 1. Aim
 
 Statistical analysis of processed `r units` data. Pre-defined comparisons,
@@ -1449,6 +1438,29 @@ for(i in seq_len(nrow(combos))){
   long$feature_a = factor(long$feature_a, levels = feats)
   long$feature_b = factor(long$feature_b, levels = rev(feats))
 
+  # Axis label colours: match the group_features_by annotation used in the
+  # general heatmap. Falls back to black if the column is not set / not found.
+  grp_col   = heatmap_group_features_by
+  vmeta_here = if(exists("bio_de")) bio_de$variable_meta else NULL
+  axis_col_x = "black"
+  axis_col_y = "black"
+  grp_legend = NULL
+  if(!is.null(grp_col) && !is.null(vmeta_here) &&
+     grp_col %in% colnames(vmeta_here) &&
+     "Compound" %in% colnames(vmeta_here)){
+    grp_vals   = as.character(vmeta_here[[grp_col]][
+                   match(feats, vmeta_here$Compound)])
+    grp_vals[is.na(grp_vals)] = "unknown"
+    grp_levels = unique(grp_vals)
+    pal        = scales::hue_pal()(length(grp_levels))
+    names(pal) = grp_levels
+    axis_col_x = unname(pal[grp_vals])              # x order = feats
+    axis_col_y = unname(pal[rev(grp_vals)])          # y order = rev(feats)
+    # Build a tiny legend data.frame for annotation
+    grp_legend = data.frame(x = NA_real_, y = NA_real_,
+                            grp = factor(grp_levels, levels = grp_levels))
+  }
+
   p = ggplot2::ggplot(long, ggplot2::aes(feature_a, feature_b, fill = r)) +
         ggplot2::geom_tile(color = "white", linewidth = 0.1) +
         ggplot2::scale_fill_gradient2(low = "#2166ac", mid = "white",
@@ -1458,12 +1470,26 @@ for(i in seq_len(nrow(combos))){
         ggplot2::theme_classic(base_size = 10) +
         ggplot2::theme(
           axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5,
-                                              hjust = 1, size = 6),
-          axis.text.y = ggplot2::element_text(size = 6),
+                                              hjust = 1, size = 6,
+                                              colour = axis_col_x),
+          axis.text.y = ggplot2::element_text(size = 6,
+                                              colour = axis_col_y),
           legend.position = "right"
         ) +
         ggplot2::labs(x = NULL, y = NULL, fill = mt,
                       title = sprintf("%s — %s — %s", cn, sb, mt))
+
+  # Overlay invisible points carrying the group colour scale so a legend appears.
+  if(!is.null(grp_legend)){
+    p = p +
+      ggplot2::geom_point(data = grp_legend,
+                          ggplot2::aes(x = x, y = y, colour = grp),
+                          inherit.aes = FALSE, na.rm = TRUE, size = 3) +
+      ggplot2::scale_colour_manual(values = pal, name = grp_col,
+                                   drop = FALSE) +
+      ggplot2::guides(colour = ggplot2::guide_legend(
+        override.aes = list(size = 3, shape = 15)))
+  }
 
   if(show_values && length(feats) <= 30){
     p = p + ggplot2::geom_text(ggplot2::aes(label = sprintf("%.2f", r)),

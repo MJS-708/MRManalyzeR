@@ -47,9 +47,12 @@ across datasets. Default `"Sample_ID"`.}
 \item{drop_samples}{Character vector of `Sample_ID`s to exclude from the
 merged result.}
 
-\item{prefix_features}{Logical — if `TRUE`, prefix each feature name
-with the dataset's tag (e.g. `GOM__PGE2`) to avoid duplicated feature
-names across panels.}
+\item{prefix_features}{Controls feature-name prefixing. `FALSE` (default):
+never prefix. `TRUE`: always prefix every feature with its dataset tag
+(e.g. `GOM__PGE2`). `"auto"`: prefix only features whose names collide
+across two or more inputs — note that the resulting names depend on which
+datasets are combined, so `"auto"` is not stable across different combine
+runs.}
 
 \item{combined_name}{Name attribute of the resulting `DatasetExperiment`.}
 }

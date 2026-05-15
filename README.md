@@ -14,7 +14,19 @@ Primarily for internal use at the Wheelock lab, Karolinska Institutet
 
 ## Installation
 
-Latest release:
+### Bioconductor dependencies (do this first)
+
+`MRManalyzeR` depends on three Bioconductor packages (`struct`,
+`structToolbox`, `pmp`) that aren't on CRAN, so `install_github()` /
+`devtools::install()` cannot pull them automatically. Install them once:
+
+```r
+if(!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install(c("struct", "structToolbox", "pmp"))
+```
+
+### Latest release
 
 ```r
 # install.packages("remotes")

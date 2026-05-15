@@ -35,9 +35,12 @@
 #'   across datasets. Default `"Sample_ID"`.
 #' @param drop_samples Character vector of `Sample_ID`s to exclude from the
 #'   merged result.
-#' @param prefix_features Logical — if `TRUE`, prefix each feature name
-#'   with the dataset's tag (e.g. `GOM__PGE2`) to avoid duplicated feature
-#'   names across panels.
+#' @param prefix_features Controls feature-name prefixing. `FALSE` (default):
+#'   never prefix. `TRUE`: always prefix every feature with its dataset tag
+#'   (e.g. `GOM__PGE2`). `"auto"`: prefix only features whose names collide
+#'   across two or more inputs — note that the resulting names depend on which
+#'   datasets are combined, so `"auto"` is not stable across different combine
+#'   runs.
 #' @param combined_name Name attribute of the resulting `DatasetExperiment`.
 #' @return A single `struct::DatasetExperiment` containing the merged data.
 #' @export
@@ -49,11 +52,15 @@ combine_datasets = function(paths,
                             qc_regex            = "^QC",
                             sample_id_col       = "Sample_ID",
                             drop_samples        = NULL,
-                            prefix_features     = FALSE,
+                            prefix_features     = FALSE,   # FALSE | TRUE | "auto"
                             combined_name       = "combined"){
 
   stopifnot(length(paths) >= 1)
   stopifnot(all(file.exists(paths)))
+  if(!identical(prefix_features, FALSE) &&
+     !identical(prefix_features, TRUE)  &&
+     !identical(prefix_features, "auto"))
+    stop("[combine_datasets] prefix_features must be FALSE, TRUE, or \"auto\".")
 
   # Tags used for feature prefixing + lookup in the per-dataset config lists.
   tags = if(!is.null(names(paths)) && all(nzchar(names(paths))))
@@ -80,6 +87,28 @@ combine_datasets = function(paths,
     dat   = as.data.frame(de$data)
     smeta = as.data.frame(de$sample_meta)
     vmeta = as.data.frame(de$variable_meta)
+
+    # 0. Force per-dataset alignment between data columns and variable_meta
+    #    rows. The S4 DatasetExperiment may store these in separate slots that
+    #    can drift (especially for older RDS files). Use Compound as the join
+    #    key when available; fall back to positional alignment only when the
+    #    counts match exactly.
+    if(!identical(as.character(rownames(vmeta)),
+                  as.character(colnames(dat)))){
+      cn = colnames(dat)
+      if("Compound" %in% colnames(vmeta) &&
+         all(cn %in% as.character(vmeta$Compound))){
+        idx                = match(cn, as.character(vmeta$Compound))
+        vmeta              = vmeta[idx, , drop = FALSE]
+        rownames(vmeta)    = cn
+      } else if(nrow(vmeta) == ncol(dat)){
+        rownames(vmeta) = cn
+      } else {
+        stop(sprintf(
+          "[combine_datasets] '%s': cannot align variable_meta (%d rows) to data (%d cols). Compound column missing or values don't match data colnames.",
+          tag, nrow(vmeta), ncol(dat)))
+      }
+    }
 
     # 1. Deduplication: any sample type can have a repeated Sample_ID (repeated
     # QC injections, data-entry errors, etc.). Collapse to first occurrence and
@@ -119,16 +148,6 @@ combine_datasets = function(paths,
     vmr = .pick_per_dataset(feature_meta_rename, p, tag)
     if(length(vmr)) vmeta = .rename_cols(vmeta, vmr)
 
-    # 3. Optional feature prefix to avoid name collisions across panels
-    if(isTRUE(prefix_features)){
-      old_feats = colnames(dat)
-      new_feats = paste0(tag, "__", old_feats)
-      colnames(dat) = new_feats
-      if("Compound" %in% colnames(vmeta))
-        vmeta$Compound = new_feats
-      rownames(vmeta) = new_feats
-    }
-
     # 4. Canonicalise sample rownames to the chosen ID column
     sid = as.character(smeta[[sample_id_col]])
     if(anyNA(sid) || any(!nzchar(sid)) || anyDuplicated(sid))
@@ -140,6 +159,31 @@ combine_datasets = function(paths,
     dats[[i]]   = dat
     smetas[[i]] = smeta
     vmetas[[i]] = vmeta
+  }
+
+  # 3b. Apply prefixing now that all datasets are loaded.
+  #     "auto": only prefix features that appear in more than one dataset.
+  if(!isFALSE(prefix_features)){
+    all_feats   = unlist(lapply(dats, colnames))
+    dup_feats   = unique(all_feats[duplicated(all_feats)])
+    for(i in seq_along(dats)){
+      tag       = tags[i]
+      old_feats = colnames(dats[[i]])
+      to_prefix = if(isTRUE(prefix_features)) rep(TRUE, length(old_feats))
+                  else old_feats %in% dup_feats
+      new_feats = ifelse(to_prefix, paste0(tag, "__", old_feats), old_feats)
+
+      # Update colnames(dat) and rownames(vmeta) every iteration so they
+      # are guaranteed to be in lockstep, even when no prefixing happens.
+      colnames(dats[[i]])    = new_feats
+      rownames(vmetas[[i]])  = new_feats
+      if("Compound" %in% colnames(vmetas[[i]])){
+        # Coerce to character so factor inputs don't silently become NA when
+        # we assign a new (prefixed) level.
+        vmetas[[i]]$Compound = as.character(vmetas[[i]]$Compound)
+        vmetas[[i]]$Compound[to_prefix] = new_feats[to_prefix]
+      }
+    }
   }
 
   # 5. Resolve column lists — intersect-by-default
@@ -171,6 +215,36 @@ combine_datasets = function(paths,
   data_combined  = do.call(cbind, lapply(dats,   function(d) d[common, , drop = FALSE]))
   vmeta_combined = do.call(rbind, vmetas)
   smeta_combined = smetas[[1]][common, sample_meta_cols, drop = FALSE]
+
+  # Sanity check: SummarizedExperiment requires assay dimnames to line up
+  # with rowData/colData rownames. Catch mismatches here with a useful
+  # message rather than the cryptic SE constructor error.
+  if(!identical(colnames(data_combined), rownames(vmeta_combined))){
+    bad = which(colnames(data_combined) != rownames(vmeta_combined))
+    # Attribute each mismatched position back to its source dataset
+    # by tracking cumulative feature counts per panel.
+    nfeat_per = vapply(dats, ncol, integer(1))
+    cuts      = cumsum(nfeat_per)
+    src_idx   = findInterval(bad, c(0, cuts[-length(cuts)]) + 1)
+    show      = head(seq_along(bad), 10)
+    lines = vapply(show, function(k){
+      i = bad[k]; di = src_idx[k]
+      sprintf("  [%s] pos %d: data='%s' vs vmeta='%s'",
+              tags[di], i, colnames(data_combined)[i],
+              rownames(vmeta_combined)[i])
+    }, character(1))
+    stop(sprintf(
+      "[combine_datasets] Internal alignment failure: %d feature(s) have mismatching colnames(data) vs rownames(variable_meta). This usually indicates the xlsx 'matrix' and 'feature_metadata' sheets disagree on names/order for one of the inputs. Mismatches:\n%s%s",
+      length(bad), paste(lines, collapse = "\n"),
+      if(length(bad) > 10) sprintf("\n  ... (%d more)", length(bad) - 10) else ""))
+  }
+  if(anyDuplicated(colnames(data_combined))){
+    dups = unique(colnames(data_combined)[duplicated(colnames(data_combined))])
+    stop("[combine_datasets] Combined data has duplicate feature names: ",
+         paste(head(dups, 10), collapse = ", "),
+         if(length(dups) > 10) sprintf(" ... (%d total)", length(dups)) else "",
+         ". Use prefix_features=TRUE (or \"auto\") to disambiguate.")
+  }
 
   struct::DatasetExperiment(
     name          = combined_name,

@@ -20,7 +20,36 @@ load_dataset = function(path, sample_id_col = "Sample_ID"){
   ext = tolower(tools::file_ext(path))
 
   if(ext == "rds"){
-    return(readRDS(path))
+    de = readRDS(path)
+    # Validate variable_meta rownames against data colnames. Old RDS files
+    # can have drifted because Compound values may not match the matrix
+    # column headers exactly. If they don't match, rebuild the DE so the
+    # variable_meta is in lockstep with the data.
+    dat = as.data.frame(de$data)
+    vm  = as.data.frame(de$variable_meta)
+    sm  = as.data.frame(de$sample_meta)
+    dat_cn = colnames(dat)
+    if(!is.null(dat_cn) && !identical(as.character(rownames(vm)),
+                                      as.character(dat_cn))){
+      if(!"Compound" %in% colnames(vm))
+        stop(sprintf("[load_dataset] %s: variable_meta has no Compound column to align on.", path))
+      missing_in_vm = setdiff(dat_cn, as.character(vm$Compound))
+      if(length(missing_in_vm)){
+        stop(sprintf(
+          "[load_dataset] %s: %d data column(s) have no matching Compound row in variable_meta (e.g. %s). The RDS appears to have drifted between data and variable_meta — re-export from the source xlsx.",
+          path, length(missing_in_vm),
+          paste(head(missing_in_vm, 5), collapse = ", ")))
+      }
+      rownames(vm) = as.character(vm$Compound)
+      vm           = vm[dat_cn, , drop = FALSE]
+      de = struct::DatasetExperiment(
+        name          = de$name,
+        data          = dat,
+        sample_meta   = sm,
+        variable_meta = vm
+      )
+    }
+    return(de)
   }
 
   if(ext == "xlsx"){
@@ -57,6 +86,19 @@ load_dataset = function(path, sample_id_col = "Sample_ID"){
     # Variable_meta keyed by Compound (the convention used elsewhere in the package).
     if("Compound" %in% colnames(fmeta))
       rownames(fmeta) = as.character(fmeta$Compound)
+
+    # Ensure variable_meta rows are in the same order as matrix columns.
+    # Reorder by name when possible; otherwise error out loudly so the user
+    # can fix the input rather than getting silent misalignment downstream.
+    if(all(colnames(M) %in% rownames(fmeta))){
+      fmeta = fmeta[colnames(M), , drop = FALSE]
+    } else {
+      missing_in_fmeta = setdiff(colnames(M), rownames(fmeta))
+      stop(sprintf(
+        "[load_dataset] %s: %d matrix column(s) have no matching row in feature_metadata$Compound (e.g. %s). Fix the xlsx so matrix headers and feature_metadata$Compound use identical names.",
+        path, length(missing_in_fmeta),
+        paste(head(missing_in_fmeta, 5), collapse = ", ")))
+    }
 
     return(struct::DatasetExperiment(
       name          = tools::file_path_sans_ext(basename(path)),
