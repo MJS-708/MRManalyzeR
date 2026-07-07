@@ -5,6 +5,9 @@
 CLAUDE.md
 .claude/
 
+# Scratch figures (logo / workflow drafts) — keep local only
+man/figures/
+
 # Session Data files
 .RData
 .RDataTmp

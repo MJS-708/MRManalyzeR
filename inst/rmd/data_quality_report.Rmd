@@ -163,16 +163,34 @@ DT::datatable(
 
 ```{r cvs}
 # Per-feature CV in QC vs samples (when QC samples present)
+dm = as.data.frame(data_matrix)
+n_feat = ncol(dm)
+feat_names = colnames(dm) %||% character(0)
+
 qc_idx     = which(metadata[[qc_head]] == qc_label)
 sample_idx = setdiff(seq_len(nrow(metadata)), qc_idx)
 
 cv_fn = function(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE) * 100
 
+# Always return a length-n_feat vector so data.frame() never sees a length
+# mismatch — even when qc_idx is empty or n_feat is zero.
+cv_col = function(idx){
+  if(n_feat == 0 || length(idx) < 2) return(rep(NA_real_, n_feat))
+  round(vapply(dm, function(x) cv_fn(x[idx]), numeric(1)), 2)
+}
+
 cv_table = data.frame(
-  Compound  = colnames(data_matrix),
-  CV_QC     = if(length(qc_idx) >= 2) round(vapply(data_matrix, function(x) cv_fn(x[qc_idx]),     numeric(1)), 2) else NA_real_,
-  CV_sample = if(length(sample_idx) >= 2) round(vapply(data_matrix, function(x) cv_fn(x[sample_idx]), numeric(1)), 2) else NA_real_
+  Compound  = feat_names,
+  CV_QC     = cv_col(qc_idx),
+  CV_sample = cv_col(sample_idx),
+  stringsAsFactors = FALSE
 )
+
+if(length(qc_idx) < 2){
+  cat(sprintf(
+    "_No QC samples detected (metadata$%s == '%s' had %d row(s)). CV_QC column shown as NA._\n\n",
+    qc_head, qc_label, length(qc_idx)))
+}
 
 DT::datatable(cv_table, filter = "top",
               options = list(pageLength = 25, scrollX = TRUE))
@@ -485,7 +503,9 @@ DT::datatable(
 if(!is.null(removed_features) && nrow(removed_features) > 0){
   DT::datatable(
     removed_features %>% dplyr::select(Compound, Comment),
-    caption = "Summary of compounds excluded"
+    caption = paste0(
+      "Compounds excluded — includes S/N failures, all-NA features, and ",
+      "feature-metadata mismatches (no matching Processing_name / ID).")
   )
 } else {
   cat("_None recorded (typical when PeakMatrixProcessing.execute was False)._")

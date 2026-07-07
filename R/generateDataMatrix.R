@@ -67,12 +67,37 @@ generateDataMatrix = function(fdata,
   if(!isFALSE(snr))
     out_table = .apply_snr_mask(out_table, base, snr)
 
-  if(length(fnames) != ncol(out_table))
-    warning("Compound naming mismatch: check fdata$Processing_name vs lcms_table$ID.")
+  # --- Mismatch diagnostics ----------------------------------------------
+  # Track features that exist in fdata$Processing_name but have no row in
+  # the LC-MS table (compound never reported by TargetLynx for any sample).
+  # Tracked here so they can be surfaced in the QC report and the console.
+  missing_in_data = setdiff(fnames, colnames(out_table))
+  if(length(missing_in_data)){
+    message(sprintf(
+      "[generateDataMatrix] %d feature(s) in fdata$Processing_name have no rows in lcms_table:\n  %s",
+      length(missing_in_data),
+      paste(missing_in_data, collapse = ", ")))
+  }
 
-  # Rename Processing_name -> Compound via O(1) lookup
+  # Rename Processing_name -> Compound via O(1) lookup. Any lcms_table$ID
+  # not present in fdata$Processing_name maps to NA — those columns carry
+  # data but have no feature_meta row, so we must drop them before
+  # assembling the DatasetExperiment (otherwise SE complains that assay
+  # colnames disagree with rowData rownames).
+  orig_names  = colnames(out_table)
   name_lookup = stats::setNames(fdata$Compound, fdata$Processing_name)
-  colnames(out_table) = name_lookup[colnames(out_table)]
+  new_names   = name_lookup[orig_names]
+  unmapped    = is.na(new_names)
+  unmapped_ids = orig_names[unmapped]   # surfaced in QC report
+  if(length(unmapped_ids)){
+    message(sprintf(
+      "[generateDataMatrix] %d lcms_table$ID(s) have no matching fdata$Processing_name and were dropped:\n  %s",
+      length(unmapped_ids),
+      paste(unmapped_ids, collapse = ", ")))
+    out_table = out_table[, !unmapped, drop = FALSE]
+    new_names = new_names[!unmapped]
+  }
+  colnames(out_table) = new_names
 
   # Drop all-NA features (vectorized via colSums)
   keep_col = colSums(!is.na(out_table)) > 0
@@ -81,7 +106,24 @@ generateDataMatrix = function(fdata,
 
   # --- Per-batch processing ----------------------------------------------
   meta_yes = dplyr::filter(metadata, Include == "YES")
-  batches  = unique(meta_yes[[bc_header]])
+
+  # Fail loud and early if bc_header is misconfigured — silent fallback
+  # would mask YAML typos and produce an empty downstream matrix.
+  if(is.null(bc_header) || isFALSE(bc_header) ||
+     !bc_header %in% colnames(meta_yes)){
+    stop(sprintf(
+      "bc_header='%s' is not a column in sample_metadata. Fix the YAML 'bc_header:' to match an existing sample_metadata column (got: %s).",
+      bc_header %||% "<NULL>",
+      paste(colnames(meta_yes), collapse = ", ")))
+  }
+
+  # Treat NA / "" bc_header values (e.g. blanks, QCs that weren't
+  # cryosectioned) as a single "_unbatched_" group so they survive the
+  # per-batch split instead of being silently dropped via `NA == "x"`.
+  bc_vec = as.character(meta_yes[[bc_header]])
+  bc_vec[is.na(bc_vec) | !nzchar(bc_vec)] = "_unbatched_"
+  meta_yes[[bc_header]] = bc_vec
+  batches = unique(bc_vec)
 
   if(length(batches) == 1L){
     # fast-path: skip the rebind
@@ -114,6 +156,11 @@ generateDataMatrix = function(fdata,
   }
 
   # --- Assemble DatasetExperiment ----------------------------------------
+  if(nrow(out_matrix) == 0 || ncol(out_matrix) == 0){
+    stop(sprintf(
+      "[generateDataMatrix] Empty matrix after processing (%d samples × %d features). Check: bc_header column, blank/SNR filters, and that lcms_table actually contains data for the included samples.",
+      nrow(out_matrix), ncol(out_matrix)))
+  }
   lcms_experiment = .assemble_DE(out_matrix, fdata, metadata)
 
   if(isTRUE(batch_correction)){
@@ -126,7 +173,39 @@ generateDataMatrix = function(fdata,
   # --- Record removed features -------------------------------------------
   fdata$Report [fdata$Compound %in% remove_feats] = "NO"
   fdata$Comment[fdata$Compound %in% remove_feats] = "Fails S/NR in peak matrix processing"
+
+  # Flag features whose Processing_name appears in fdata but has no rows
+  # in the LC-MS table (compound never reported by TargetLynx).
+  if(length(missing_in_data)){
+    miss_row = fdata$Processing_name %in% missing_in_data
+    fdata$Report [miss_row] = "NO"
+    fdata$Comment[miss_row] = "No matching ID in lcms_table"
+  }
   removed_features = dplyr::filter(fdata, Report == "NO")
+
+  # Append unmapped lcms_table IDs (no fdata entry at all) so the QC report
+  # also surfaces those — fdata has no row for them, so we add stub rows.
+  if(length(unmapped_ids)){
+    extra = data.frame(
+      Compound = unmapped_ids,
+      Report   = "NO",
+      Comment  = "No matching Processing_name in feature_metadata",
+      stringsAsFactors = FALSE
+    )
+    # pad to the same columns as removed_features
+    miss_cols = setdiff(colnames(removed_features), colnames(extra))
+    for(m in miss_cols) extra[[m]] = NA
+    extra = extra[, colnames(removed_features), drop = FALSE]
+    removed_features = rbind(removed_features, extra)
+  }
+
+  # Console summary banner so mismatches are impossible to miss
+  if(length(unmapped_ids) || length(missing_in_data)){
+    message("\n--- Feature-mismatch summary ---")
+    message(sprintf("  fdata Processing_name with no LC-MS data : %d", length(missing_in_data)))
+    message(sprintf("  lcms_table IDs with no fdata entry       : %d", length(unmapped_ids)))
+    message("  (both groups listed in 'Compounds excluded' in the QC report)\n")
+  }
 
   list(lcms_experiment, removed_features)
 }
@@ -192,12 +271,20 @@ generateDataMatrix = function(fdata,
 #' @keywords internal
 #' @noRd
 .assemble_DE = function(out_matrix, fdata, metadata){
+  # Feature side: keep only fdata rows whose Compound is in the matrix, in
+  # matrix-column order, so rowData rownames match assay colnames exactly.
   fdata_output = fdata %>%
     dplyr::filter(Report == "YES", Compound %in% colnames(out_matrix)) %>%
     dplyr::arrange(match(Compound, colnames(out_matrix)))
+  rownames(fdata_output) = fdata_output$Compound
 
-  metadata_ar  = metadata %>% dplyr::arrange(Name)
-  out_matrix_ar = out_matrix[metadata_ar$Name, , drop = FALSE]
+  # Sample side: intersect first so dropped samples (blank filter, etc.)
+  # don't get reintroduced as all-NA rows.
+  metadata_ar = metadata %>%
+    dplyr::filter(Name %in% rownames(out_matrix)) %>%
+    dplyr::arrange(Name)
+  rownames(metadata_ar) = metadata_ar$Name
+  out_matrix_ar = out_matrix[metadata_ar$Name, fdata_output$Compound, drop = FALSE]
 
   struct::DatasetExperiment(
     data          = out_matrix_ar,
