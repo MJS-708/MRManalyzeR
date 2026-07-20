@@ -10,7 +10,7 @@ append_stats_xlsx(out_xlsx, stats_tables)
 \item{out_xlsx}{Path to the results xlsx (from `run_MRManalyzeR()`).}
 
 \item{stats_tables}{A list with elements `stats`, `correlations`,
-`linear_models` — as returned by [`run_stats()`].}
+`linear_models` - as returned by [`run_stats()`].}
 }
 \value{
 Invisibly, the path written.
@@ -18,13 +18,14 @@ Invisibly, the path written.
 \description{
 Adds (or overwrites) the following tabs in the existing results xlsx:
 \itemize{
-  \item `stats`         — long table of comparisons + post-hoc.
-  \item `correlations`  — long table of feature × feature correlations.
-  \item `linear_models` — long table of `lm()` coefficients.
-  \item `cor_<name>_<subset>_<method>` — one wide correlation matrix tab
-        per (correlation × subset × method). Sheet names are sanitised
+  \item `stats`         - long table of comparisons + post-hoc.
+  \item `correlations`  - long table of feature x feature correlations.
+  \item `linear_models` - long table of `lm()` coefficients.
+  \item `cor_<name>_<subset>_<method>` - one wide correlation matrix tab
+        per (correlation x subset x method). Sheet names are sanitised
         and truncated to 31 characters (Excel limit).
 }
 If the workbook does not exist (e.g. results dir was cleaned), a new one
 is written containing only the stats tabs.
 }
+\keyword{internal}

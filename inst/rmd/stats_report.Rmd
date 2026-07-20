@@ -29,10 +29,22 @@ if(!exists("report_pars") || is.null(report_pars))
 
 `%||%` = function(a, b) if(is.null(a)) b else a
 
+# -- Sample identification (shared across all sections) --
+# One column classifies every row; sample_labels names the value(s) marking
+# biological samples (vs blanks / QCs / calibration standards).
+# sample_id_head is the per-sample identifier used for hover tooltips and
+# heatmap row labels (and the default for pca.label_factor).
+sample_type_head = report_pars$sample_type_head %||% "Sample_type"
+sample_labels    = report_pars$sample_labels    %||% "Sample"
+sample_id_head   = report_pars$sample_id_head   %||% "Sample_ID"
+
 # Stats blocks
-comparisons   = report_pars$comparisons   %||% list()
-correlations  = report_pars$correlations  %||% list()
-linear_models = report_pars$linear_models %||% list()
+# Each section is a block with a section-level `enabled:` toggle and an
+# `entries:` list; .section_entries() honours the toggle and returns the
+# entries (or list() when disabled/absent).
+comparisons   = .section_entries(report_pars$comparisons,   "comparisons")
+correlations  = .section_entries(report_pars$correlations,  "correlations")
+linear_models = .section_entries(report_pars$linear_models, "linear_models")
 
 p_adjust      = report_pars$p_adjust      %||% "BH"
 sig_threshold = report_pars$sig_threshold %||% 0.05
@@ -40,9 +52,9 @@ sig_threshold = report_pars$sig_threshold %||% 0.05
 # Plot config
 fig_scale       = as.numeric(report_pars$fig_scale %||% 1)
 boxplot_faceted = isTRUE(report_pars$boxplot$faceted %||% TRUE)
-pca_include     = isTRUE(report_pars$pca$include   %||% TRUE)
+pca_include     = isTRUE(report_pars$pca$enabled   %||% TRUE)
 pca_label       = report_pars$pca$label            %||% "none"
-pca_label_factor = report_pars$pca$label_factor    %||% "Sample_ID"
+pca_label_factor = report_pars$pca$label_factor    %||% sample_id_head
 pca_ellipse     = report_pars$pca$ellipse          %||% "group"
 pca_ellipse_conf = as.numeric(report_pars$pca$ellipse_confidence %||% 0.95)
 
@@ -62,7 +74,7 @@ pca_pc_x          = as.integer(pca_components[1])
 pca_pc_y          = as.integer(pca_components[length(pca_components)])
 
 # Optional loadings plot below scores; coloured by a feature_metadata column.
-pca_loadings_show = isTRUE(report_pars$pca$loadings$include %||% TRUE)
+pca_loadings_show = isTRUE(report_pars$pca$loadings$enabled %||% TRUE)
 pca_loadings_color_by = report_pars$pca$loadings$color_by %||% NULL
 
 # Optional extra subset for the GLOBAL PCA tab (multi-key, AND'd together).
@@ -70,32 +82,89 @@ pca_loadings_color_by = report_pars$pca$loadings$color_by %||% NULL
 # to inspect only the left-lobe samples in the global PCA.
 pca_global_subset = report_pars$pca$subset %||% NULL
 
-volcano_include   = isTRUE(report_pars$volcano$include %||% TRUE)
+volcano_include   = isTRUE(report_pars$volcano$enabled %||% TRUE)
 volcano_top_n     = as.integer(report_pars$volcano$top_n_label %||% 10)
 # Volcano y-axis: use raw or BH-adjusted p (default = unadjusted, per request)
 volcano_use_adj   = isTRUE(report_pars$volcano$use_adjusted %||% FALSE)
 
-# Heatmap (z-score, samples x features)
-heatmap_include            = isTRUE(report_pars$heatmap$include %||% TRUE)
+# Heatmap (z-score, samples x features). Shared render settings live at the
+# heatmap: root and are INHERITED by the general / top_changing / split_by_class
+# sub-blocks; any can be OVERRIDDEN per block (resolved via .resolve_hm below).
+heatmap_include            = isTRUE(report_pars$heatmap$enabled %||% TRUE)
 heatmap_color_samples_by   = report_pars$heatmap$color_samples_by  %||%
-                             (report_pars$global_summary_factor %||% "Sample_type")
+                             report_pars$global_summary_factor %||% sample_type_head
 heatmap_group_features_by  = report_pars$heatmap$group_features_by %||% NULL
 heatmap_transform          = report_pars$heatmap$transform %||% "log2"
 heatmap_scale              = report_pars$heatmap$scale     %||% "z"
 heatmap_cluster_rows       = isTRUE(report_pars$heatmap$cluster_rows %||% FALSE)
 heatmap_cluster_within     = isTRUE(report_pars$heatmap$cluster_within_groups %||% TRUE)
-# Orientation: which axis carries samples. "samples_y" (default) = samples
-# on rows / y-axis, features on columns / x-axis. "samples_x" transposes.
-# "auto" puts the larger dimension on the y-axis (longer-dim labels are
-# easier to read when stacked vertically).
+# Orientation: which axis carries samples. "samples_y" (default) = samples on
+# rows / y-axis, features on columns / x-axis. "samples_x" transposes. "auto"
+# puts the larger dimension on the y-axis.
 heatmap_orientation        = tolower(report_pars$heatmap$orientation %||% "samples_y")
-if(!heatmap_orientation %in% c("samples_y", "samples_x", "auto"))
-  heatmap_orientation = "samples_y"
+# Feature-label density: show | small | hide. "small" shrinks the feature-axis
+# labels so a large panel stays readable via the class colour annotation bar;
+# "hide" drops them entirely.
+heatmap_feature_labels     = tolower(report_pars$heatmap$feature_labels %||% "small")
+# Root default for the 4.6 comparison-tab ranking metric (top_changing may override).
+heatmap_rank_by            = tolower(report_pars$heatmap$rank_by %||% "p_adj")
+
+# Validators: coerce out-of-range values back to the safe default.
+.chk_scope  = function(x) if(x %in% c("global","comparisons","all")) x else "all"
+.chk_orient = function(x) if(x %in% c("samples_y","samples_x","auto")) x else "samples_y"
+.chk_labels = function(x) if(x %in% c("show","small","hide")) x else "small"
+heatmap_orientation    = .chk_orient(heatmap_orientation)
+heatmap_feature_labels = .chk_labels(heatmap_feature_labels)
+
+# Resolve a sub-block's render settings against the root defaults — the full
+# settings list consumed by .draw_heatmap(). Every setting is overridable per
+# block (block$x %||% root_x).
+.resolve_hm = function(block){
+  block = block %||% list()
+  list(
+    color_samples_by  = block$color_samples_by  %||% heatmap_color_samples_by,
+    group_features_by = block$group_features_by %||% heatmap_group_features_by,
+    transform         = tolower(block$transform %||% heatmap_transform),
+    scale             = tolower(block$scale     %||% heatmap_scale),
+    cluster_rows      = isTRUE(block$cluster_rows          %||% heatmap_cluster_rows),
+    cluster_within    = isTRUE(block$cluster_within_groups %||% heatmap_cluster_within),
+    orientation       = .chk_orient(tolower(block$orientation    %||% heatmap_orientation)),
+    feature_labels    = .chk_labels(tolower(block$feature_labels %||% heatmap_feature_labels))
+  )
+}
+
+# 4.5 general — all features retained.
+heatmap_general       = report_pars$heatmap$general %||% list()
+heatmap_general_on    = isTRUE(heatmap_general$enabled %||% TRUE)
+heatmap_general_scope = .chk_scope(tolower(heatmap_general$scope %||% "all"))
+heatmap_general_cfg   = .resolve_hm(heatmap_general)
+
+# 4.6 top-changing — top-N changing features per class. Comparison tabs rank by
+# `rank_by` (block %||% root); the Global tab ranks by separation across
+# color_samples_by (no single 2-group contrast exists globally).
+heatmap_topchg        = report_pars$heatmap$top_changing %||% list()
+heatmap_topchg_on     = isTRUE(heatmap_topchg$enabled %||% FALSE)
+heatmap_topchg_scope  = .chk_scope(tolower(heatmap_topchg$scope %||% "comparisons"))
+heatmap_topchg_n      = as.integer(heatmap_topchg$n_per_class %||% 10)
+heatmap_topchg_rank   = tolower(heatmap_topchg$rank_by %||% heatmap_rank_by)
+heatmap_topchg_cfg    = .resolve_hm(heatmap_topchg)
+
+# 4.7 by class — one heatmap per subclass_col value, or one COMBINED heatmap
+# across the selected values (multi_class). `subclass_values` focuses specific
+# values (empty/NULL = all).
+heatmap_split         = report_pars$heatmap$split_by_class %||% list()
+heatmap_split_on      = isTRUE(heatmap_split$enabled %||% FALSE)
+heatmap_split_scope   = .chk_scope(tolower(heatmap_split$scope %||% "global"))
+heatmap_subclass_col  = heatmap_split$subclass_col %||% NULL
+heatmap_subclass_vals = heatmap_split$subclass_values %||% NULL
+heatmap_split_multi   = tolower(heatmap_split$multi_class %||% "combined")
+if(!heatmap_split_multi %in% c("combined","tabs")) heatmap_split_multi = "combined"
+heatmap_split_cfg     = .resolve_hm(heatmap_split)
 
 # Biological-sample filter (drops blanks/QCs from global summary + global PCA).
-# Default: keep only Sample_type == "Sample". Set head: ~ to disable.
+# Defaults to sample_type_head ∈ sample_labels. Set biological_filter.head: ~ to disable.
 bio_filter        = report_pars$biological_filter %||%
-                    list(head = "Sample_type", levels = c("Sample"))
+                    list(head = sample_type_head, levels = sample_labels)
 bio_filter_head   = bio_filter$head
 bio_filter_levels = bio_filter$levels
 
@@ -105,8 +174,8 @@ boxplot_factors = report_pars$boxplot$factors %||%
                    c(report_pars$boxplot_factor1, report_pars$boxplot_factor2)
 boxplot_factors = boxplot_factors[!is.null(boxplot_factors) & nzchar(boxplot_factors)]
 boxplot_display = report_pars$boxplot$display %||% "tabs"      # combined | tabs
-boxplot_levels  = report_pars$boxplot$levels  %||% report_pars$boxplot_levels %||% c("Sample")
-boxplot_head    = report_pars$boxplot$head    %||% report_pars$boxplot_head   %||% "Sample_type"
+boxplot_levels  = report_pars$boxplot$levels %||% sample_labels
+boxplot_head    = report_pars$boxplot$head   %||% sample_type_head
 
 # Plot type — applies to BOTH section 4.2 (faceted across comparisons) and 4.3
 # (general by-factor). Values: "box" | "bar" | "both". When "both", boxplot
@@ -121,14 +190,20 @@ if(!plot_error_bar %in% c("SD", "SE", "NONE")) plot_error_bar = "SD"
 
 # Per-comparison boxplot toggle (faceted across comparisons)
 plot_boxplot_per_comparison = isTRUE(report_pars$plot_boxplot_per_compound %||% TRUE)
-yaxis_quant = report_pars$yaxis_quant %||% 0.95
+yaxis_quant    = report_pars$yaxis_quant    %||% 0.95
+yaxis_scalar = as.numeric(report_pars$yaxis_scalar %||% 1.3)
 
-# Sample-level summary bar plots
-global_summary_factor = report_pars$global_summary_factor %||%
-                        report_pars$global_boxpot_factor %||%
-                        "Sample_type"
+# Sample-level summary bar plots; default group/colour by the sample-type classifier.
+global_summary_factor = report_pars$global_summary_factor %||% sample_type_head
 
 units = pmp_params$units %||% pmp_params$datatype %||% project_paths$datatype %||% ""
+
+# Y-value label for point tooltips: the datatype units (ng/mL, Response, …),
+# or "value" when unset. Coerced to a scalar (datatype may arrive as a list).
+value_label = local({
+  u = as.character(units)[1]
+  if(!is.na(u) && nzchar(u)) u else "value"
+})
 
 # Ion ratios (enzyme activity surrogates etc.)
 ion_ratios_list    = ((report_pars$ion_ratios %||% list())$ratios) %||% list()
@@ -215,6 +290,15 @@ boxplot_theme = ggplot2::theme_classic() +
                          width = 0.15, alpha = 0.7, size = 1.4)
 }
 
+# Per-point hover for the boxplot/jitter layers: sample id, y-value (labelled
+# with the datatype units — Response / ng/mL / etc.), and the primary study
+# factor. `%.3g` = 3 sig figs (report house format); sprintf recycles the
+# scalar labels across the vector args, so it fills a whole plot's points.
+.point_tooltip = function(sid, gsf_val, yval, ylab = value_label){
+  sprintf("%s: %s<br>%s: %.3g<br>%s: %s",
+          sample_id_head, sid, ylab, yval, global_summary_factor, gsf_val)
+}
+
 # Add barplot layers with SD/SE error bars (used when plot_type is "bar" or
 # in the "both" loop). `error_bar` ∈ {"SD","SE","NONE"}. Jitter intentionally
 # omitted on bars: the boxplot view next to it already shows individual
@@ -284,9 +368,9 @@ compound_names = compoundInfo$Compound
 
 # Biological-sample subset: dropped from sections that should not see blanks/QCs
 # (global summary, global PCA). Per-comparison sections do their own subsetting
-# via de_subset(), so they're unaffected.
+# via subset_dataset(), so they're unaffected.
 if(!is.null(bio_filter_head) && bio_filter_head %in% colnames(metadata)){
-  bio_de = de_subset(importData,
+  bio_de = subset_dataset(importData,
                      conditions = setNames(list(bio_filter_levels),
                                            bio_filter_head))
   bio_meta   = bio_de$sample_meta
@@ -297,9 +381,18 @@ if(!is.null(bio_filter_head) && bio_filter_head %in% colnames(metadata)){
   bio_matrix = data_matrix
 }
 
+# Fail loud here rather than let downstream sections silently degrade:
+# smeta[[factor_name]] on a missing column returns NULL (no error), which
+# would just produce an uninformative single-group summary bar/heatmap
+# instead of surfacing the YAML typo.
+if(!global_summary_factor %in% colnames(metadata))
+  stop(sprintf(
+    "[stats_report] global_summary_factor='%s' is not a column in sample_metadata. Available columns: %s",
+    global_summary_factor, paste(colnames(metadata), collapse = ", ")))
+
 DT::datatable(
   metadata %>%
-    dplyr::group_by(.data[[report_pars$summary_head %||% "Sample_type"]]) %>%
+    dplyr::group_by(.data[[sample_type_head]]) %>%
     dplyr::summarize(`Number of samples` = dplyr::n(), .groups = "drop")
 )
 ```
@@ -314,6 +407,30 @@ side-by-side. Compounds in TargetLynx import order. Plot height auto-scales
 with the number of features.
 
 ```{r global-helpers, include=FALSE}
+# Shared qualitative palette so a categorical variable (e.g. Enzymatic_pathway)
+# gets IDENTICAL colours in the heatmap feature annotation and the PCA loadings
+# bars. Keyed on sorted levels, so a given level maps to the same colour
+# regardless of the order features happen to appear in each plot.
+.qual_pal = function(n){
+  if(n < 1) return(character(0))
+  if(requireNamespace("RColorBrewer", quietly = TRUE) && n >= 3 && n <= 9)
+    return(RColorBrewer::brewer.pal(n, "Set1"))
+  if(requireNamespace("RColorBrewer", quietly = TRUE) && n > 9)
+    return(grDevices::colorRampPalette(RColorBrewer::brewer.pal(9, "Set1"))(n))
+  grDevices::hcl.colors(max(n, 2), palette = "Dark 3")[seq_len(n)]   # n == 1 or 2
+}
+# Named colour vector for the sorted levels of x. NA / "NA" -> grey; a
+# 2-level variable uses the fixed blue/red pair (matches binary annotations).
+.group_fill_colors = function(x){
+  x  = as.character(x)
+  lv = sort(unique(x[!is.na(x) & x != "NA"]))
+  m  = if(length(lv) == 0)      character(0)
+       else if(length(lv) == 2) stats::setNames(c("#377eb8", "#e41a1c"), lv)
+       else                     stats::setNames(.qual_pal(length(lv)), lv)
+  if(any(is.na(x) | x == "NA")) m = c(m, "NA" = "grey70")
+  m
+}
+
 .feature_bar = function(d, smeta, factor_name, scale, units){
   feats = colnames(d)
   grp   = smeta[[factor_name]]
@@ -399,20 +516,24 @@ across **all** comparisons × methods × features.
 ```{r comp-boxplots, results="asis", eval=plot_boxplot_per_comparison && length(comparisons) > 0, fig.width=10*fig_scale, fig.height=6*fig_scale}
 # Build one long data frame across all comparisons, then facet.
 # Combine user `subset:` with the comparison level restriction in one
-# de_subset() call (avoid post-hoc DE mutation which trips SE's assay check).
+# subset_dataset() call (avoid post-hoc DE mutation which trips SE's assay check).
 long_rows = list()
 for(comp in comparisons){
   cond = comp$subset
   cond = if(is.null(cond)) list() else as.list(cond)
   cond[[comp$compare$factor]] = comp$compare$levels
-  de_sub = de_subset(importData, conditions = cond)
+  de_sub = subset_dataset(importData, conditions = cond)
   if(nrow(de_sub$sample_meta) == 0) next
 
   d = de_sub$data
-  d$.sample_id  = rownames(d)
+  .sm = de_sub$sample_meta
+  d$.sample_id  = if(sample_id_head %in% colnames(.sm))
+                    as.character(.sm[[sample_id_head]]) else rownames(d)
   d$.group      = factor(de_sub$sample_meta[[comp$compare$factor]],
                          levels = comp$compare$levels)
   d$.comparison = comp$name
+  d$.gsf        = if(global_summary_factor %in% colnames(.sm))
+                    as.character(.sm[[global_summary_factor]]) else NA_character_
   long_rows[[length(long_rows) + 1]] = d
 }
 long = dplyr::bind_rows(long_rows)
@@ -462,10 +583,9 @@ function showBoxplot(id){
 for(i in seq_along(detected_compounds)){
   compound = detected_compounds[i]
   cid      = detected_ids[i]
-  axis_limit = quantile(long[[compound]], prob = yaxis_quant, na.rm = TRUE) * 1.3
+  axis_limit = quantile(long[[compound]], prob = yaxis_quant, na.rm = TRUE) * yaxis_scalar
 
-  long$.tooltip = sprintf("Sample: %s<br>%s: %.3g",
-                          long$.sample_id, compound, long[[compound]])
+  long$.tooltip = .point_tooltip(long$.sample_id, long$.gsf, long[[compound]])
 
   p_base = ggplot2::ggplot(long, ggplot2::aes(x = .group, y = .data[[compound]],
                                               fill = .group)) +
@@ -501,6 +621,16 @@ for(i in seq_along(detected_compounds)){
 keep = metadata[[boxplot_head]] %in% boxplot_levels
 plot_meta = metadata[keep, , drop = FALSE]
 plot_data = data_matrix[keep, , drop = FALSE]
+
+# Primary study factor per row (for point tooltips), aligned to plot_data rows.
+gsf_fb = if(global_summary_factor %in% colnames(plot_meta))
+           as.character(plot_meta[[global_summary_factor]]) else NA_character_
+
+missing_bf = setdiff(boxplot_factors, colnames(plot_meta))
+if(length(missing_bf))
+  stop(sprintf(
+    "[stats_report] boxplot.factors contains column(s) not in sample_metadata: %s. Available columns: %s",
+    paste(missing_bf, collapse = ", "), paste(colnames(plot_meta), collapse = ", ")))
 
 # Detect compounds with any data
 is_detected_fb = vapply(compound_names, function(cmp){
@@ -568,14 +698,13 @@ function showFactorBoxplot_%s(id){
   for(i in seq_along(detected_fb)){
     compound = detected_fb[i]
     cid      = detected_ids_fb[i]
-    axis_limit = quantile(plot_data[[compound]], prob = yaxis_quant, na.rm = TRUE) * 1.3
+    axis_limit = quantile(plot_data[[compound]], prob = yaxis_quant, na.rm = TRUE) * yaxis_scalar
+    sid_fb = if(sample_id_head %in% colnames(plot_meta))
+               as.character(plot_meta[[sample_id_head]]) else rownames(plot_data)
     df_plot = data.frame(group     = grouping,
                          value     = plot_data[[compound]],
-                         sample_id = rownames(plot_data),
-                         .tooltip  = sprintf("Sample: %s<br>%s: %.3g",
-                                             rownames(plot_data),
-                                             compound,
-                                             plot_data[[compound]]),
+                         sample_id = sid_fb,
+                         .tooltip  = .point_tooltip(sid_fb, gsf_fb, plot_data[[compound]]),
                          stringsAsFactors = FALSE)
 
     p_base = ggplot2::ggplot(df_plot,
@@ -603,7 +732,7 @@ function showFactorBoxplot_%s(id){
 
 ## 4.3 PCA per comparison
 
-`r if(!pca_include) "_Skipped — set_ \x60pca.include: True\x60 _in YAML to enable._"`
+`r if(!pca_include) "_Skipped — set_ \x60pca.enabled: True\x60 _in YAML to enable._"`
 
 For each comparison: filter samples by the comparison's `subset:`, run PCA on
 that slice, colour points by the comparison's `compare.factor`. The first
@@ -743,7 +872,9 @@ tab is a **global** PCA across the biological subset, coloured by
         ggplot2::geom_vline(xintercept = 0, color = "grey50", linewidth = 0.3) +
         ggplot2::facet_wrap(~ PC, scales = "free", nrow = 1) +
         ggplot2::scale_y_discrete(labels = function(x) sub("__[^_]+$", "", x)) +
-        ggplot2::scale_fill_viridis_d(end = 0.9, na.value = "grey60", drop = FALSE) +
+        # Same palette as the heatmap feature annotation (shared .group_fill_colors)
+        ggplot2::scale_fill_manual(values = .group_fill_colors(color_vec),
+                                   na.value = "grey60", drop = FALSE) +
         ggplot2::labs(x = "Loading", y = NULL,
                       fill = loadings_color_by %||% "") +
         ggplot2::theme_classic(base_size = 10) +
@@ -786,7 +917,7 @@ tab is a **global** PCA across the biological subset, coloured by
   rownames(M) = rn
   rownames(sm) = rn
 
-  res = run_pca_pipeline(M,
+  res = run_pca(M,
                          impute        = pca_impute,
                          impute_frac   = pca_impute_frac,
                          transform     = pca_transform,
@@ -802,7 +933,7 @@ tab is a **global** PCA across the biological subset, coloured by
 
 # Global tab
 pca_global_de = if(length(pca_global_subset)){
-  de_subset(bio_de, conditions = as.list(pca_global_subset))
+  subset_dataset(bio_de, conditions = as.list(pca_global_subset))
 } else {
   bio_de
 }
@@ -828,7 +959,7 @@ for(comp in comparisons){
   cond = comp$subset
   cond = if(is.null(cond)) list() else as.list(cond)
   cond[[comp$compare$factor]] = comp$compare$levels
-  de_sub = de_subset(importData, conditions = cond)
+  de_sub = subset_dataset(importData, conditions = cond)
 
   if(nrow(de_sub$data) < 3 || ncol(de_sub$data) < 2){
     .pca_runs[[comp$name]] = list(tab_heading = comp$name, insufficient = TRUE)
@@ -896,7 +1027,7 @@ for(nm in names(.pca_runs)){
 
 ## 4.4 Volcano per comparison {.tabset .tabset-fade}
 
-`r if(!volcano_include) "_Skipped — set_ \x60volcano.include: True\x60 _in YAML to enable._"`
+`r if(!volcano_include) "_Skipped — set_ \x60volcano.enabled: True\x60 _in YAML to enable._"`
 
 **Methods.** One volcano per 2-group comparison directly from the t-test
 rows. For ≥3-group comparisons we plot one volcano per Tukey HSD pair.
@@ -1012,19 +1143,29 @@ if(nrow(volc_data) == 0){
 }
 ```
 
-## 4.5 Heatmap (samples × features) {.tabset .tabset-fade}
+## 4.5 Heatmap — general (all features) {.tabset .tabset-fade}
 
-`r if(!heatmap_include) "_Skipped — set_ \x60heatmap.include: True\x60 _in YAML to enable._"`
+`r if(!heatmap_include) "_Skipped — set_ \x60heatmap.enabled: True\x60 _in YAML to enable._"`
 
-`r if(heatmap_include) sprintf("Sample × feature heatmap. Cells coloured by per-feature %s of %s data. Sample rows annotated by_ \x60%s\x60_; feature columns%s.", heatmap_scale, heatmap_transform, heatmap_color_samples_by, if(!is.null(heatmap_group_features_by)) sprintf(" annotated and grouped by_ \x60%s\x60", heatmap_group_features_by) else "")`
+`r if(heatmap_include && !heatmap_general_on) "_Skipped — set_ \x60heatmap.general.enabled: True\x60 _in YAML to enable._"`
+
+`r if(heatmap_include && heatmap_general_on) sprintf("All features retained. Cells show per-feature %s of %s; samples coloured by \x60%s\x60%s. Scope: **%s** (Global and/or one tab per comparison). Feature labels: %s.", heatmap_general_cfg$scale, heatmap_general_cfg$transform, heatmap_general_cfg$color_samples_by, if(!is.null(heatmap_general_cfg$group_features_by)) sprintf(", features grouped by \x60%s\x60", heatmap_general_cfg$group_features_by) else "", heatmap_general_scope, heatmap_general_cfg$feature_labels)`
 
 ```{r heatmap, eval=heatmap_include, fig.width=max(10, ncol(bio_matrix)*0.18)*fig_scale, fig.height=max(5, nrow(bio_matrix)*0.22 + 2)*fig_scale}
-# Shared heatmap renderer — called for Global tab and each comparison tab.
-# M_raw  : samples × features numeric matrix (raw / pre-transform)
-# smeta  : sample metadata data.frame, rows aligned to M_raw
-# vmeta  : variable metadata data.frame with a 'Compound' column
-# title  : plot title string
-.draw_heatmap = function(M_raw, smeta, vmeta, title){
+# Shared heatmap renderer — called for every scope target across 4.5/4.6/4.7.
+# M_raw   : samples × features numeric matrix (raw / pre-transform)
+# smeta   : sample metadata data.frame, rows aligned to M_raw
+# vmeta   : variable metadata data.frame with a 'Compound' column
+# title   : plot title string
+# cfg     : resolved render settings for the calling section (from .resolve_hm)
+#           — transform / scale / color_samples_by / cluster_rows /
+#           cluster_within / orientation / group_features_by / feature_labels.
+# group_by / feature_labels: explicit overrides (default to the cfg values);
+#           the combined split-by-class heatmap overrides group_by to the
+#           subclass column.
+.draw_heatmap = function(M_raw, smeta, vmeta, title, cfg = heatmap_general_cfg,
+                         group_by = cfg$group_features_by,
+                         feature_labels = cfg$feature_labels){
   if(!requireNamespace("pheatmap", quietly = TRUE)){
     cat("_Install `pheatmap` to render heatmaps._\n"); return(invisible(NULL))
   }
@@ -1033,12 +1174,12 @@ if(nrow(volc_data) == 0){
   }
 
   M = as.matrix(M_raw)
-  if("Sample_ID" %in% colnames(smeta))
-    rownames(M) = as.character(smeta$Sample_ID)
+  if(sample_id_head %in% colnames(smeta))
+    rownames(M) = as.character(smeta[[sample_id_head]])
 
-  if(heatmap_transform == "log2"){
+  if(cfg$transform == "log2"){
     M[M < 0 & !is.na(M)] = 0; M = log2(M + 1)
-  } else if(heatmap_transform == "sqrt"){
+  } else if(cfg$transform == "sqrt"){
     M[M < 0 & !is.na(M)] = 0; M = sqrt(M)
   }
 
@@ -1047,25 +1188,24 @@ if(nrow(volc_data) == 0){
   M = M[, keep_f, drop = FALSE]
   if(ncol(M) == 0){ cat("_No variable features._\n"); return(invisible(NULL)) }
 
-  if(heatmap_scale == "z")
+  if(cfg$scale == "z")
     M = scale(M, center = TRUE, scale = TRUE)
   M[is.na(M)] = 0
   cap = 2.5; M[M > cap] = cap; M[M < -cap] = -cap
 
   ann_row = data.frame(row.names = rownames(M))
-  ann_row[[heatmap_color_samples_by]] = smeta[[heatmap_color_samples_by]]
+  ann_row[[cfg$color_samples_by]] = smeta[[cfg$color_samples_by]]
 
   ann_col  = NULL; gaps_col = NULL
-  if(!is.null(heatmap_group_features_by) &&
-     heatmap_group_features_by %in% colnames(vmeta)){
+  if(!is.null(group_by) && group_by %in% colnames(vmeta)){
     feats       = colnames(M)
-    fgroups     = as.character(vmeta[[heatmap_group_features_by]][match(feats, vmeta$Compound)])
+    fgroups     = as.character(vmeta[[group_by]][match(feats, vmeta$Compound)])
     fgroups[is.na(fgroups)] = "NA"
     group_levels = unique(fgroups)
     ordered_cols = character(0)
     for(g in group_levels){
       in_g = feats[fgroups == g]
-      if(heatmap_cluster_within && length(in_g) > 1){
+      if(cfg$cluster_within && length(in_g) > 1){
         d = stats::dist(t(M[, in_g, drop = FALSE]))
         if(all(is.finite(d)))
           in_g = in_g[stats::hclust(d, method = "average")$order]
@@ -1073,37 +1213,28 @@ if(nrow(volc_data) == 0){
       ordered_cols = c(ordered_cols, in_g)
     }
     M = M[, ordered_cols, drop = FALSE]
-    fgroups2 = as.character(vmeta[[heatmap_group_features_by]][match(ordered_cols, vmeta$Compound)])
+    fgroups2 = as.character(vmeta[[group_by]][match(ordered_cols, vmeta$Compound)])
     fgroups2[is.na(fgroups2)] = "NA"
     ann_col = data.frame(row.names = ordered_cols)
-    ann_col[[heatmap_group_features_by]] = factor(fgroups2, levels = group_levels)
+    ann_col[[group_by]] = factor(fgroups2, levels = group_levels)
     blk = rle(fgroups2)$lengths
     gaps_col = cumsum(blk); gaps_col = gaps_col[-length(gaps_col)]
   }
 
-  ord_s   = order(as.character(ann_row[[heatmap_color_samples_by]]))
+  ord_s   = order(as.character(ann_row[[cfg$color_samples_by]]))
   M       = M[ord_s, , drop = FALSE]
   ann_row = ann_row[ord_s, , drop = FALSE]
-  blk_r   = rle(as.character(ann_row[[heatmap_color_samples_by]]))$lengths
+  blk_r   = rle(as.character(ann_row[[cfg$color_samples_by]]))$lengths
   gaps_row = cumsum(blk_r); gaps_row = gaps_row[-length(gaps_row)]
 
   pal = grDevices::colorRampPalette(c("#2166ac", "white", "#b2182b"))(101)
   brk = seq(-cap, cap, length.out = 102)
 
-  .qual = function(n){
-    if(requireNamespace("RColorBrewer", quietly = TRUE) && n <= 9 && n >= 3)
-      return(RColorBrewer::brewer.pal(n, "Set1"))
-    if(requireNamespace("RColorBrewer", quietly = TRUE) && n > 9)
-      return(grDevices::colorRampPalette(RColorBrewer::brewer.pal(9, "Set1"))(n))
-    grDevices::hcl.colors(max(n, 2), palette = "Dark 3")
-  }
+  # Annotation colours via the shared .group_fill_colors() so the feature-group
+  # annotation (e.g. Enzymatic_pathway) matches the PCA loadings bars exactly.
   .ann_colors = function(ann){
     if(is.null(ann)) return(NULL)
-    out = lapply(ann, function(v){
-      lv = unique(as.character(v[!is.na(v)]))
-      if(length(lv) == 2) setNames(c("#377eb8", "#e41a1c"), lv)
-      else                setNames(.qual(length(lv)), lv)
-    })
+    out = lapply(ann, .group_fill_colors)
     names(out) = colnames(ann); out
   }
   ann_colors = c(.ann_colors(ann_row), .ann_colors(ann_col))
@@ -1112,8 +1243,8 @@ if(nrow(volc_data) == 0){
   # explicitly. "auto" transposes when there are more samples than features —
   # the long axis goes to x so the canvas isn't tall and narrow with crowded
   # row labels.
-  flip = identical(heatmap_orientation, "samples_x") ||
-         (identical(heatmap_orientation, "auto") &&
+  flip = identical(cfg$orientation, "samples_x") ||
+         (identical(cfg$orientation, "auto") &&
           nrow(M) > ncol(M))
   if(flip){
     M_use         = t(M)
@@ -1122,15 +1253,27 @@ if(nrow(volc_data) == 0){
     gaps_row_use  = gaps_col
     gaps_col_use  = gaps_row
     cluster_rows_use = FALSE
-    cluster_cols_use = heatmap_cluster_rows  # original "rows" was samples
+    cluster_cols_use = cfg$cluster_rows  # original "rows" was samples
   } else {
     M_use         = M
     ann_row_use   = ann_row
     ann_col_use   = ann_col
     gaps_row_use  = gaps_row
     gaps_col_use  = gaps_col
-    cluster_rows_use = heatmap_cluster_rows
+    cluster_rows_use = cfg$cluster_rows
     cluster_cols_use = FALSE
+  }
+
+  # Feature-label density: features sit on the columns pre-flip, rows post-flip.
+  # Sample labels stay readable; only the (potentially huge) feature axis is
+  # shrunk / hidden per heatmap_feature_labels.
+  feat_fs   = switch(feature_labels, show = 9, small = 4, 4)
+  feat_show = feature_labels != "hide"
+  samp_fs   = 9
+  if(flip){   # features -> rows, samples -> cols
+    show_rn = feat_show; fs_row = feat_fs; show_cn = TRUE; fs_col = samp_fs
+  } else {    # features -> cols, samples -> rows
+    show_cn = feat_show; fs_col = feat_fs; show_rn = TRUE; fs_row = samp_fs
   }
 
   ph = pheatmap::pheatmap(
@@ -1143,7 +1286,8 @@ if(nrow(volc_data) == 0){
     annotation_col    = ann_col_use,
     annotation_colors = if(length(ann_colors)) ann_colors else NA,
     color             = pal, breaks = brk,
-    fontsize_row      = 11, fontsize_col = 9,
+    show_rownames     = show_rn, show_colnames = show_cn,
+    fontsize_row      = fs_row, fontsize_col = fs_col,
     border_color      = NA,
     legend_breaks     = c(-cap, -1, 0, 1, cap),
     legend_labels     = c(sprintf("≤ -%g", cap), "-1", "0", "1", sprintf("≥ %g", cap)),
@@ -1165,46 +1309,226 @@ if(nrow(volc_data) == 0){
   print(p_out)
   invisible(NULL)
 }
+
+# Build the render targets for a scope selector, shared by 4.5/4.6/4.7. Each
+# target is list(label, M = samples x features matrix, smeta, vmeta, comp) —
+# comp is NULL for the Global target, else the comparison spec. "comparisons"
+# and "all" expand the pre-defined comparisons; empty subsets are dropped.
+.heatmap_targets = function(scope){
+  g = list(list(label = "Global", M = bio_matrix, smeta = bio_meta,
+                vmeta = bio_de$variable_meta, comp = NULL))
+  cmps = list()
+  if(scope %in% c("comparisons", "all"))
+    cmps = Filter(Negate(is.null), lapply(comparisons, function(comp){
+      cond = if(is.null(comp$subset)) list() else as.list(comp$subset)
+      cond[[comp$compare$factor]] = comp$compare$levels
+      de = subset_dataset(importData, conditions = cond)
+      if(nrow(de$sample_meta) == 0) return(NULL)
+      list(label = comp$name, M = de$data, smeta = de$sample_meta,
+           vmeta = de$variable_meta, comp = comp)
+    }))
+  switch(scope, global = g, comparisons = cmps, all = c(g, cmps))
+}
+
+# Option 1: keep only the N most-changing features per class for a comparison.
+# Ranks each feature by the chosen stats metric (p_adj / p_value: smaller is
+# better; log2fc: larger |value| is better), takes the top N within each
+# `group_features_by` class. Falls back to all features if top_changing is off
+# or the comparison has no stats.
+.top_changing = function(comp_name, feats, vmeta, group_by = heatmap_group_features_by){
+  if(!heatmap_topchg_on || is.null(stats_tables) ||
+     is.null(stats_tables$stats) || nrow(stats_tables$stats) == 0) return(feats)
+  s = stats_tables$stats[stats_tables$stats$comparison == comp_name, , drop = FALSE]
+  metric_col = switch(heatmap_topchg_rank,
+                      log2fc = "log2FC", p_value = "p_value", "p_adj")
+  if(nrow(s) == 0 || !metric_col %in% colnames(s)) return(feats)
+
+  use_abs = metric_col == "log2FC"          # log2FC ranks by magnitude
+  agg = tapply(s[[metric_col]], s$feature, function(v){
+    v = v[is.finite(v)]
+    if(!length(v)) return(NA_real_)
+    if(use_abs) max(abs(v)) else min(v)     # best (biggest FC / smallest p)
+  })
+  score = agg[match(feats, names(agg))]     # aligned to feats; NA if no stats
+  grp = if(!is.null(group_by) && group_by %in% colnames(vmeta))
+          as.character(vmeta[[group_by]][match(feats, vmeta$Compound)]) else rep("all", length(feats))
+  grp[is.na(grp)] = "NA"
+
+  keep = unlist(lapply(unique(grp), function(g){
+    idx = which(grp == g)                   # positions in feats for this class
+    ord = order(score[idx], decreasing = use_abs, na.last = NA)  # drops NA-score feats
+    feats[idx][ord][seq_len(min(heatmap_topchg_n, length(ord)))]
+  }), use.names = FALSE)
+  if(length(keep)) keep else feats
+}
+
+# Global-tab analogue of .top_changing when there is no single comparison to
+# rank by: score each feature by how strongly it separates the `color_by` groups
+# (the section's color_samples_by / primary study factor). On the transformed
+# values, z-score each feature across samples, then score = variance of the
+# per-group means; keep the top-N per `group_by` class. Falls back to all feats
+# if the factor is absent or has < 2 usable groups.
+.top_changing_global = function(feats, M, smeta, vmeta, color_by, group_by, transform){
+  if(!heatmap_topchg_on) return(feats)
+  if(is.null(color_by) || !color_by %in% colnames(smeta)) return(feats)
+  g_all = as.character(smeta[[color_by]]); ok = !is.na(g_all)
+  if(length(unique(g_all[ok])) < 2) return(feats)
+
+  X = as.matrix(M[, feats, drop = FALSE])
+  if(identical(transform, "log2")){ X[X < 0 & !is.na(X)] = 0; X = log2(X + 1) }
+  else if(identical(transform, "sqrt")){ X[X < 0 & !is.na(X)] = 0; X = sqrt(X) }
+  X = scale(X)[ok, , drop = FALSE]; g = g_all[ok]     # per-feature z, keep labelled rows
+  score = apply(X, 2, function(col){
+    m = tapply(col, g, mean, na.rm = TRUE)            # per-group means
+    stats::var(as.numeric(m), na.rm = TRUE)           # spread across groups
+  })
+  names(score) = feats
+
+  cls = if(!is.null(group_by) && group_by %in% colnames(vmeta))
+          as.character(vmeta[[group_by]][match(feats, vmeta$Compound)]) else rep("all", length(feats))
+  cls[is.na(cls)] = "NA"
+  keep = unlist(lapply(unique(cls), function(cc){
+    idx = which(cls == cc)
+    ord = order(score[idx], decreasing = TRUE, na.last = NA)
+    feats[idx][ord][seq_len(min(heatmap_topchg_n, length(ord)))]
+  }), use.names = FALSE)
+  if(length(keep)) keep else feats
+}
+
+# Figure-canvas sizing shared by 4.5/4.6/4.7. Each asis section renders many
+# heatmaps into ONE knitr canvas (single fig size per chunk), so size to the
+# largest target using that block's orientation. .hm_scope_nrow = max sample
+# count across a scope's targets (used for the height/width formula).
+.hm_fig_dims = function(max_nrow, n_feat, orientation, fig_scale = 1){
+  flip = orientation == "samples_x" || (orientation == "auto" && max_nrow > n_feat)
+  w = if(flip) max_nrow * 0.30 else n_feat  * 0.20
+  h = if(flip) n_feat  * 0.18 else max_nrow * 0.27
+  list(w = max(10, w) * fig_scale, h = max(6, h + 2) * fig_scale)
+}
+.hm_scope_nrow = function(scope){
+  n = vapply(.heatmap_targets(scope), function(tg) nrow(tg$M), integer(1))
+  if(length(n)) max(n) else nrow(bio_matrix)
+}
 ```
 
-### Global {-}
-
-_`r if(heatmap_include) sprintf("%d samples × %d features", nrow(bio_matrix), ncol(bio_matrix))`_
-
-```{r heatmap-global, eval=heatmap_include, fig.width=max(10, (if(heatmap_orientation == "samples_x" || (heatmap_orientation == "auto" && nrow(bio_matrix) > ncol(bio_matrix))) nrow(bio_matrix)*0.30 else ncol(bio_matrix)*0.20))*fig_scale, fig.height=max(6, (if(heatmap_orientation == "samples_x" || (heatmap_orientation == "auto" && nrow(bio_matrix) > ncol(bio_matrix))) ncol(bio_matrix)*0.18 else nrow(bio_matrix)*0.27) + 2)*fig_scale, out.width="100%"}
-.draw_heatmap(bio_matrix, bio_meta, bio_de$variable_meta,
-              sprintf("Z-score heatmap (%s of %s) — global", heatmap_scale, heatmap_transform))
+```{r heatmap-general-precompute, include=FALSE, eval=heatmap_include && heatmap_general_on}
+.tg45 = .heatmap_targets(heatmap_general_scope)
+.d45  = .hm_fig_dims(.hm_scope_nrow(heatmap_general_scope), ncol(bio_matrix),
+                     heatmap_general_cfg$orientation, fig_scale)
 ```
 
-```{r heatmap-comp-precompute, include=FALSE, eval=heatmap_include && length(comparisons) > 0}
-# Pre-compute max sample count across comparison subsets so the shared
-# fig.height in heatmap-comparisons is tall enough for the largest group.
-.hm_comp_nrows = vapply(comparisons, function(comp){
-  cond = comp$subset
-  cond = if(is.null(cond)) list() else as.list(cond)
-  cond[[comp$compare$factor]] = comp$compare$levels
-  de_sub = de_subset(importData, conditions = cond)
-  nrow(de_sub$data)
-}, integer(1))
-.hm_max_nrow = if(length(.hm_comp_nrows)) max(.hm_comp_nrows) else nrow(bio_matrix)
-```
-
-```{r heatmap-comparisons, results="asis", eval=heatmap_include && length(comparisons) > 0, fig.width=max(10, (if(heatmap_orientation == "samples_x" || (heatmap_orientation == "auto" && (if(exists(".hm_max_nrow")) .hm_max_nrow else nrow(bio_matrix)) > ncol(bio_matrix))) (if(exists(".hm_max_nrow")) .hm_max_nrow else nrow(bio_matrix))*0.30 else ncol(bio_matrix)*0.20))*fig_scale, fig.height=max(6, (if(heatmap_orientation == "samples_x" || (heatmap_orientation == "auto" && (if(exists(".hm_max_nrow")) .hm_max_nrow else nrow(bio_matrix)) > ncol(bio_matrix))) ncol(bio_matrix)*0.18 else (if(exists(".hm_max_nrow")) .hm_max_nrow else nrow(bio_matrix))*0.27) + 2)*fig_scale, out.width="100%"}
-for(comp in comparisons){
-  cat(sprintf("\n### %s {-}\n\n", comp$name))
-
-  cond = comp$subset
-  cond = if(is.null(cond)) list() else as.list(cond)
-  cond[[comp$compare$factor]] = comp$compare$levels
-  de_sub = de_subset(importData, conditions = cond)
-
-  cat(sprintf("_%d samples × %d features_\n\n",
-              nrow(de_sub$data), ncol(de_sub$data)))
-
-  .draw_heatmap(de_sub$data, de_sub$sample_meta, de_sub$variable_meta,
-                sprintf("Z-score heatmap (%s of %s) — %s",
-                        heatmap_scale, heatmap_transform, comp$name))
+```{r heatmap-general, results="asis", eval=heatmap_include && heatmap_general_on, fig.width=(if(exists(".d45")) .d45$w else 10), fig.height=(if(exists(".d45")) .d45$h else 6), out.width="100%"}
+if(!length(.tg45))
+  cat(sprintf("_No render targets for scope '%s'._\n\n", heatmap_general_scope))
+for(tg in .tg45){
+  cat(sprintf("\n### %s {-}\n\n", tg$label))
+  cat(sprintf("_%d samples × %d features_\n\n", nrow(tg$M), ncol(tg$M)))
+  .draw_heatmap(tg$M, tg$smeta, tg$vmeta,
+                sprintf("%s of %s — %s", heatmap_general_cfg$scale,
+                        heatmap_general_cfg$transform, tg$label),
+                cfg = heatmap_general_cfg)
   cat("\n\n")
+}
+```
+
+## 4.6 Heatmap — top-changing per class {.tabset .tabset-fade}
+
+`r if(heatmap_include && !heatmap_topchg_on) "_Skipped — set_ \x60heatmap.top_changing.enabled: True\x60 _in YAML to enable._"`
+
+`r if(heatmap_include && heatmap_topchg_on) sprintf("Top %d features per \x60%s\x60 class. Comparison tabs rank by %s; the Global tab ranks by separation across \x60%s\x60 (no single contrast). Scope: **%s**. Feature labels: %s.", heatmap_topchg_n, heatmap_topchg_cfg$group_features_by %||% "class", heatmap_topchg_rank, heatmap_topchg_cfg$color_samples_by, heatmap_topchg_scope, heatmap_topchg_cfg$feature_labels)`
+
+```{r heatmap-topchg-precompute, include=FALSE, eval=heatmap_include && heatmap_topchg_on}
+.tg46 = .heatmap_targets(heatmap_topchg_scope)
+.gf46 = heatmap_topchg_cfg$group_features_by
+.n_cls46 = if(!is.null(.gf46) && .gf46 %in% colnames(bio_de$variable_meta)){
+  v = as.character(bio_de$variable_meta[[.gf46]]); length(unique(v[!is.na(v)]))
+} else 1L
+.d46 = .hm_fig_dims(.hm_scope_nrow(heatmap_topchg_scope),
+                    max(2, min(ncol(bio_matrix), heatmap_topchg_n * .n_cls46)),
+                    heatmap_topchg_cfg$orientation, fig_scale)
+```
+
+```{r heatmap-topchg, results="asis", eval=heatmap_include && heatmap_topchg_on, fig.width=(if(exists(".d46")) .d46$w else 10), fig.height=(if(exists(".d46")) .d46$h else 6), out.width="100%"}
+if(!length(.tg46))
+  cat(sprintf("_No render targets for scope '%s'._\n\n", heatmap_topchg_scope))
+for(tg in .tg46){
+  cat(sprintf("\n### %s {-}\n\n", tg$label))
+  kf = if(is.null(tg$comp))
+         .top_changing_global(colnames(tg$M), tg$M, tg$smeta, tg$vmeta,
+                              heatmap_topchg_cfg$color_samples_by,
+                              heatmap_topchg_cfg$group_features_by,
+                              heatmap_topchg_cfg$transform)
+       else
+         .top_changing(tg$comp$name, colnames(tg$M), tg$vmeta,
+                       group_by = heatmap_topchg_cfg$group_features_by)
+  Mk = tg$M[, kf, drop = FALSE]
+  rank_desc = if(is.null(tg$comp)) sprintf("%s separation", heatmap_topchg_cfg$color_samples_by) else heatmap_topchg_rank
+  cat(sprintf("_%d samples × %d features (top %d per class by %s)_\n\n",
+              nrow(Mk), ncol(Mk), heatmap_topchg_n, rank_desc))
+  .draw_heatmap(Mk, tg$smeta, tg$vmeta,
+                sprintf("%s of %s — %s (top-changing)", heatmap_topchg_cfg$scale,
+                        heatmap_topchg_cfg$transform, tg$label),
+                cfg = heatmap_topchg_cfg)
+  cat("\n\n")
+}
+```
+
+## 4.7 Heatmap — by class {.tabset .tabset-fade}
+
+`r if(heatmap_include && (!heatmap_split_on || is.null(heatmap_subclass_col))) "_Skipped — set_ \x60heatmap.split_by_class.enabled: True\x60 _and a_ \x60subclass_col\x60 _in YAML to enable._"`
+
+`r if(heatmap_include && heatmap_split_on && !is.null(heatmap_subclass_col)) sprintf("Split by \x60%s\x60 (%s). Scope: **%s**. %s Feature labels: %s.", heatmap_subclass_col, if(length(heatmap_subclass_vals)) paste(heatmap_subclass_vals, collapse=", ") else "all values", heatmap_split_scope, if(heatmap_split_multi=="combined") "Selected values combined in one heatmap (grouped by class)." else "One heatmap per value.", heatmap_split_cfg$feature_labels)`
+
+```{r heatmap-split-precompute, include=FALSE, eval=heatmap_include && heatmap_split_on && !is.null(heatmap_subclass_col)}
+.tg47 = .heatmap_targets(heatmap_split_scope)
+.d47  = .hm_fig_dims(.hm_scope_nrow(heatmap_split_scope), ncol(bio_matrix),
+                     heatmap_split_cfg$orientation, fig_scale)
+```
+
+```{r heatmap-split, results="asis", eval=heatmap_include && heatmap_split_on && !is.null(heatmap_subclass_col), fig.width=(if(exists(".d47")) .d47$w else 10), fig.height=(if(exists(".d47")) .d47$h else 6), out.width="100%"}
+# Per scope target, split features by `subclass_col`. multi_class == "combined"
+# draws all selected values in one heatmap (grouped by the subclass column);
+# "tabs" draws one heatmap per value. `subclass_values` (if set) focuses values.
+split_col = heatmap_subclass_col
+for(tg in .tg47){
+  vmeta_t = tg$vmeta
+  if(!split_col %in% colnames(vmeta_t)){
+    cat(sprintf("\n### %s {-}\n\n_subclass_col '%s' not in feature_metadata — skipped._\n\n",
+                tg$label, split_col)); next
+  }
+  vals = sort(unique(as.character(vmeta_t[[split_col]])))
+  vals = vals[!is.na(vals) & nzchar(vals)]
+  if(length(heatmap_subclass_vals))
+    vals = intersect(vals, as.character(heatmap_subclass_vals))
+  if(!length(vals)){
+    cat(sprintf("\n### %s {-}\n\n_no values match subclass_values._\n\n", tg$label)); next
+  }
+  if(heatmap_split_multi == "combined"){
+    feats_v = intersect(vmeta_t$Compound[as.character(vmeta_t[[split_col]]) %in% vals],
+                        colnames(tg$M))
+    if(length(feats_v) < 2){
+      cat(sprintf("\n### %s {-}\n\n_too few features._\n\n", tg$label)); next
+    }
+    cat(sprintf("\n### %s {-}\n\n", tg$label))
+    cat(sprintf("_%d samples × %d features across %s: %s_\n\n",
+                nrow(tg$M), length(feats_v), split_col, paste(vals, collapse = ", ")))
+    .draw_heatmap(tg$M[, feats_v, drop = FALSE], tg$smeta, vmeta_t,
+                  sprintf("%s — %s", tg$label, paste(vals, collapse = " / ")),
+                  cfg = heatmap_split_cfg, group_by = split_col)
+    cat("\n\n")
+  } else {
+    for(v in vals){
+      feats_v = intersect(vmeta_t$Compound[as.character(vmeta_t[[split_col]]) == v],
+                          colnames(tg$M))
+      if(length(feats_v) < 2) next
+      cat(sprintf("\n### %s — %s: %s {-}\n\n", tg$label, split_col, v))
+      cat(sprintf("_%d samples × %d features_\n\n", nrow(tg$M), length(feats_v)))
+      .draw_heatmap(tg$M[, feats_v, drop = FALSE], tg$smeta, vmeta_t,
+                    sprintf("%s — %s = %s", tg$label, split_col, v),
+                    cfg = heatmap_split_cfg)
+      cat("\n\n")
+    }
+  }
 }
 ```
 
@@ -1256,7 +1580,7 @@ for(ratio_cfg in ion_ratios_list){
       if(!isTRUE(comp$enabled %||% TRUE)) next
       cond = if(is.null(comp$subset)) list() else as.list(comp$subset)
       cond[[comp$compare$factor]] = comp$compare$levels
-      de_sub = tryCatch(de_subset(importData, conditions = cond),
+      de_sub = tryCatch(subset_dataset(importData, conditions = cond),
                         error = function(e) NULL)
       if(is.null(de_sub) || nrow(de_sub$sample_meta) == 0) next
 
@@ -1264,14 +1588,17 @@ for(ratio_cfg in ion_ratios_list){
       sub_ratio = ratio_all[sub_rn]
       sub_grp   = factor(de_sub$sample_meta[[comp$compare$factor]],
                          levels = comp$compare$levels)
+      sub_sid   = if(sample_id_head %in% colnames(de_sub$sample_meta))
+                    as.character(de_sub$sample_meta[[sample_id_head]]) else sub_rn
+      sub_gsf   = if(global_summary_factor %in% colnames(de_sub$sample_meta))
+                    as.character(de_sub$sample_meta[[global_summary_factor]]) else NA_character_
 
       long_rows_ir[[length(long_rows_ir) + 1]] = data.frame(
         .comparison = comp$name,
         .group      = sub_grp,
-        .sample_id  = sub_rn,
+        .sample_id  = sub_sid,
         ratio_value = sub_ratio,
-        .tooltip    = sprintf("Sample: %s<br>%s: %.3g",
-                              sub_rn, ratio_lbl, sub_ratio),
+        .tooltip    = .point_tooltip(sub_sid, sub_gsf, sub_ratio, ylab = "ratio"),
         stringsAsFactors = FALSE
       )
 
@@ -1307,7 +1634,7 @@ for(ratio_cfg in ion_ratios_list){
       anno_ir        = dplyr::bind_rows(anno_rows_ir)
       anno_ir$.group = factor(anno_ir$.group, levels = levels(long_ir$.group))
 
-      y_lim = quantile(long_ir$ratio_value, prob = yaxis_quant, na.rm = TRUE) * 1.3
+      y_lim = quantile(long_ir$ratio_value, prob = yaxis_quant, na.rm = TRUE) * yaxis_scalar
       y_ann = y_lim * 0.97
 
       p_base = ggplot2::ggplot(long_ir,
@@ -1347,17 +1674,20 @@ for(ratio_cfg in ion_ratios_list){
 
     for(f in boxplot_factors){
       if(!f %in% colnames(ir_meta)) next
+      sid_ir = if(sample_id_head %in% colnames(ir_meta))
+                 as.character(ir_meta[[sample_id_head]]) else rownames(ir_meta)
       df_f = data.frame(group     = as.character(ir_meta[[f]]),
                         value     = ir_ratio,
-                        sample_id = rownames(ir_meta),
+                        sample_id = sid_ir,
+                        gsf       = if(global_summary_factor %in% colnames(ir_meta))
+                                      as.character(ir_meta[[global_summary_factor]]) else NA_character_,
                         stringsAsFactors = FALSE)
       df_f = df_f[!is.na(df_f$group), ]
       if(nrow(df_f) == 0) next
 
-      df_f$.tooltip = sprintf("Sample: %s<br>%s: %.3g",
-                              df_f$sample_id, ratio_lbl, df_f$value)
+      df_f$.tooltip = .point_tooltip(df_f$sample_id, df_f$gsf, df_f$value, ylab = "ratio")
 
-      y_lim_f = quantile(df_f$value, prob = yaxis_quant, na.rm = TRUE) * 1.3
+      y_lim_f = quantile(df_f$value, prob = yaxis_quant, na.rm = TRUE) * yaxis_scalar
       p_f = ggplot2::ggplot(df_f, ggplot2::aes(group, value, fill = group)) +
         ggplot2::coord_cartesian(ylim = c(0, y_lim_f)) +
         ggplot2::scale_fill_brewer(palette = "Set1", na.value = "grey60") +
@@ -1390,9 +1720,9 @@ Pairwise feature correlations within each subset, one heatmap per
 
 ```{r corr-heatmaps, results="asis", eval=!is.null(stats_tables) && nrow(stats_tables$correlations) > 0, fig.width=8*fig_scale, fig.height=7*fig_scale}
 # One heatmap per (correlation × subset × method).
-# Optional clustering controlled by `correlations[i].cluster:` in YAML; we
-# read it back from `report_pars$correlations` (the YAML list) by name.
-corr_yaml = report_pars$correlations %||% list()
+# Optional clustering controlled by `correlations.entries[i].cluster:` in
+# YAML; `correlations` (unpacked at the top) is the entries list.
+corr_yaml = correlations
 get_yaml_opt = function(name, opt, default){
   for(c in corr_yaml) if(identical(c$name, name) && !is.null(c[[opt]])) return(c[[opt]])
   default
@@ -1413,8 +1743,6 @@ for(i in seq_len(nrow(combos))){
   if(nrow(sub) == 0){ cat("_(empty)_\n\n"); next }
 
   # Reshape lower-triangle long → full square matrix.
-  # Use first-seen order (= import order from .pairwise_cor_long); the
-  # cluster step below may reorder it.
   feats = unique(c(sub$feature_a, sub$feature_b))
   M = matrix(NA_real_, nrow = length(feats), ncol = length(feats),
              dimnames = list(feats, feats))
@@ -1426,67 +1754,108 @@ for(i in seq_len(nrow(combos))){
   # as NA so the heatmap renders the diagonal in `na.value` grey, signalling
   # "self-correlation, omitted". (When include_self: True they're filled.)
 
-  if(cluster_yn && length(feats) > 2){
-    d  = stats::as.dist(1 - abs(M))
-    hc = tryCatch(stats::hclust(d, method = "average"), error = function(e) NULL)
-    if(!is.null(hc)) feats = feats[hc$order]
+  # Feature order: group by pathway (contiguous blocks) and cluster within
+  # each group, mirroring the general heatmap. Falls back to global clustering
+  # when no group_features_by column is available. `cluster:` (per-entry YAML)
+  # toggles the within-group (or global) clustering step.
+  grp_col     = heatmap_group_features_by
+  vmeta_here  = if(exists("bio_de")) bio_de$variable_meta else NULL
+  have_groups = !is.null(grp_col) && !is.null(vmeta_here) &&
+                grp_col %in% colnames(vmeta_here) && "Compound" %in% colnames(vmeta_here)
+
+  clust_within = function(fs){
+    if(cluster_yn && length(fs) > 2){
+      dg = tryCatch(stats::as.dist(1 - abs(M[fs, fs, drop = FALSE])),
+                    error = function(e) NULL)
+      hg = if(!is.null(dg)) tryCatch(stats::hclust(dg, method = "average"),
+                                     error = function(e) NULL) else NULL
+      if(!is.null(hg)) fs = fs[hg$order]
+    }
+    fs
   }
 
-  long = expand.grid(feature_a = feats, feature_b = feats,
-                     stringsAsFactors = FALSE)
+  if(have_groups){
+    fgroups = as.character(vmeta_here[[grp_col]][match(feats, vmeta_here$Compound)])
+    fgroups[is.na(fgroups)] = "NA"
+    feats = unlist(lapply(unique(fgroups),
+                          function(g) clust_within(feats[fgroups == g])),
+                   use.names = FALSE)
+  } else {
+    feats = clust_within(feats)
+  }
+
+  # Feature -> pathway colour (shared palette, NA-safe): drives the axis
+  # annotation blocks and the legend.
+  grp_vals = if(have_groups){
+    gv = as.character(vmeta_here[[grp_col]][match(feats, vmeta_here$Compound)])
+    gv[is.na(gv)] = "NA"; gv
+  } else rep("NA", length(feats))
+  pal       = if(have_groups) .group_fill_colors(grp_vals) else NULL
+  feat_cols = if(have_groups) unname(pal[grp_vals]) else rep("grey70", length(feats))
+  names(feat_cols) = feats
+
+  # Cut the (symmetric) square to a single triangle: keep each unordered pair
+  # once (feature index a < b), plus the diagonal only when self-correlations
+  # are present (include_self). The x-axis feature order is reversed ("flipped").
+  # A dedicated strip level carries the pathway colour blocks along each axis
+  # (like the pheatmap annotation bars), so axis text can stay black.
+  strip_lvl = "__grp__"                                 # label blanked below
+  xlev = if(have_groups) c(strip_lvl, rev(feats)) else rev(feats)
+  ylev = if(have_groups) c(strip_lvl, rev(feats)) else rev(feats)
+
+  long = expand.grid(feature_a = feats, feature_b = feats, stringsAsFactors = FALSE)
   long$r = M[cbind(long$feature_a, long$feature_b)]
-  long$feature_a = factor(long$feature_a, levels = feats)
-  long$feature_b = factor(long$feature_b, levels = rev(feats))
+  ia = match(long$feature_a, feats); ib = match(long$feature_b, feats)
+  keep_tri = ia > ib | (ia == ib & !is.na(long$r))      # flip to `ia < ib` for the other half
+  long = long[keep_tri, , drop = FALSE]
+  long$feature_a = factor(long$feature_a, levels = xlev)
+  long$feature_b = factor(long$feature_b, levels = ylev)
 
-  # Axis label colours: match the group_features_by annotation used in the
-  # general heatmap. Falls back to black if the column is not set / not found.
-  grp_col   = heatmap_group_features_by
-  vmeta_here = if(exists("bio_de")) bio_de$variable_meta else NULL
-  axis_col_x = "black"
-  axis_col_y = "black"
-  grp_legend = NULL
-  if(!is.null(grp_col) && !is.null(vmeta_here) &&
-     grp_col %in% colnames(vmeta_here) &&
-     "Compound" %in% colnames(vmeta_here)){
-    grp_vals   = as.character(vmeta_here[[grp_col]][
-                   match(feats, vmeta_here$Compound)])
-    grp_vals[is.na(grp_vals)] = "unknown"
-    grp_levels = unique(grp_vals)
-    pal        = scales::hue_pal()(length(grp_levels))
-    names(pal) = grp_levels
-    axis_col_x = unname(pal[grp_vals])              # x order = feats
-    axis_col_y = unname(pal[rev(grp_vals)])          # y order = rev(feats)
-    # Build a tiny legend data.frame for annotation
-    grp_legend = data.frame(x = NA_real_, y = NA_real_,
-                            grp = factor(grp_levels, levels = grp_levels))
-  }
+  blank_strip = function(l) ifelse(l == strip_lvl, "", l)
 
   p = ggplot2::ggplot(long, ggplot2::aes(feature_a, feature_b, fill = r)) +
         ggplot2::geom_tile(color = "white", linewidth = 0.1) +
         ggplot2::scale_fill_gradient2(low = "#2166ac", mid = "white",
                                       high = "#b2182b", midpoint = 0,
                                       limits = c(-1, 1), na.value = "grey90") +
+        ggplot2::scale_x_discrete(labels = blank_strip, drop = FALSE, na.translate = FALSE) +
+        ggplot2::scale_y_discrete(labels = blank_strip, drop = FALSE, na.translate = FALSE) +
         ggplot2::coord_fixed() +
         ggplot2::theme_classic(base_size = 10) +
         ggplot2::theme(
           axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5,
-                                              hjust = 1, size = 6,
-                                              colour = axis_col_x),
-          axis.text.y = ggplot2::element_text(size = 6,
-                                              colour = axis_col_y),
+                                              hjust = 1, size = 6),
+          axis.text.y = ggplot2::element_text(size = 6),
+          axis.ticks  = ggplot2::element_blank(),
           legend.position = "right"
         ) +
         ggplot2::labs(x = NULL, y = NULL, fill = mt,
                       title = sprintf("%s — %s — %s", cn, sb, mt))
 
-  # Overlay invisible points carrying the group colour scale so a legend appears.
-  if(!is.null(grp_legend)){
+  # Pathway colour blocks: a one-cell strip per axis (left column + bottom row),
+  # filled directly (bypasses the correlation gradient). Invisible points carry
+  # the discrete colour scale so the pathway legend still appears.
+  if(have_groups){
+    x_strip = data.frame(feature_a = factor(feats,     levels = xlev),
+                         feature_b = factor(strip_lvl, levels = ylev),
+                         stringsAsFactors = FALSE)
+    y_strip = data.frame(feature_a = factor(strip_lvl, levels = xlev),
+                         feature_b = factor(feats,     levels = ylev),
+                         stringsAsFactors = FALSE)
+    # Invisible points (positions dropped as NA) carry only the colour scale so
+    # the pathway legend renders. Numeric NA_real_ is used deliberately — a
+    # factor NA would make the discrete axes render a phantom "NA" row/column.
+    grp_legend = data.frame(x = NA_real_, y = NA_real_,
+                            grp = factor(names(pal), levels = names(pal)))
     p = p +
+      ggplot2::geom_tile(data = x_strip, ggplot2::aes(feature_a, feature_b),
+                         fill = feat_cols[feats], inherit.aes = FALSE) +
+      ggplot2::geom_tile(data = y_strip, ggplot2::aes(feature_a, feature_b),
+                         fill = feat_cols[feats], inherit.aes = FALSE) +
       ggplot2::geom_point(data = grp_legend,
                           ggplot2::aes(x = x, y = y, colour = grp),
                           inherit.aes = FALSE, na.rm = TRUE, size = 3) +
-      ggplot2::scale_colour_manual(values = pal, name = grp_col,
-                                   drop = FALSE) +
+      ggplot2::scale_colour_manual(values = pal, name = grp_col, drop = FALSE) +
       ggplot2::guides(colour = ggplot2::guide_legend(
         override.aes = list(size = 3, shape = 15)))
   }

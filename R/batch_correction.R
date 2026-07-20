@@ -2,7 +2,7 @@
 #'
 #' Builds a `batch_correct` `struct` model that scales each batch so its
 #' per-feature median matches the grand median across all reference
-#' (typically QC) samples. Apply via [structToolbox::model_apply()].
+#' (typically QC) samples. Apply via [struct::model_apply()].
 #'
 #' @param qc_label Label identifying reference samples (e.g. "QC" or "all").
 #' @param factor_name Sample-metadata column holding `qc_label`.
@@ -13,13 +13,13 @@
 #' @param batch_head Sample-metadata column identifying the batch.
 #' @param ... Forwarded to [struct::new_struct()].
 #' @return A `batch_correct` `struct` model object.
-#' @export batch_correct
-#' @importFrom struct new_struct entity DatasetExperiment param_list output_value
+#' @keywords internal
+#' @importFrom struct new_struct entity DatasetExperiment param_list model_train model_predict output_value output_value<-
 #' @examples
 #' \dontrun{
 #'   D = iris_DatasetExperiment()
 #'   M = batch_correct(factor_name = 'Species', qc_label = 'all')
-#'   M = structToolbox::model_apply(M, D)
+#'   M = struct::model_apply(M, D)
 #' }
 batch_correct = function(
     qc_label='QC',
@@ -136,23 +136,25 @@ setMethod(f="model_train",
             coeffs = data.frame(matrix(nrow=0, ncol=(1+nrow(fdata))))
             colnames(coeffs) = c("Batch", fdata$Compound)
 
-            # Reference samples (QCs or all samples)
-            ref_samples = smeta$Name[which(smeta[,opt$factor_name] == opt$qc_label)]
+            # Reference samples (QCs or all samples). Use rownames(smeta) as the
+            # sample key - in a DatasetExperiment it always equals rownames(x),
+            # so this is independent of whatever the sample-id column is called.
+            ref_samples = rownames(smeta)[which(smeta[,opt$factor_name] == opt$qc_label)]
             ref_df = x[which(rownames(x) %in% ref_samples),]
 
             # Grand median intenisty (of median QC or all samples) for each feature
-            grand_med = as.numeric(apply(ref_df, 2, FUN = median, na.rm=T))
+            grand_med = as.numeric(apply(ref_df, 2, FUN = median, na.rm=TRUE))
 
 
             for(i in unique(smeta[[opt$batch_head]])){
 
               # Batch specific reference samples (QCs or all samples in specific batch)
-              sample_names = smeta$Name[which(smeta[[opt$batch_head]] == i)]
+              sample_names = rownames(smeta)[which(smeta[[opt$batch_head]] == i)]
               sample_names_ref = sample_names[which(sample_names %in% ref_samples)]
               temp_df = x[which(rownames(x) %in% sample_names_ref),]
 
               # Batch median intensity for each feature
-              batch_med = as.numeric(apply(temp_df, 2, FUN = median, na.rm=T))
+              batch_med = as.numeric(apply(temp_df, 2, FUN = median, na.rm=TRUE))
 
               # Coefficient used to normale (grand / batch intenisty)
               coeff = batch_med / grand_med
@@ -191,23 +193,24 @@ setMethod(f="model_predict",
             coeffs = data.frame(matrix(nrow=0, ncol=(1+nrow(fdata))))
             colnames(coeffs) = c("Batch", fdata$Compound)
 
-            # Reference samples (QCs or all samples)
-            ref_samples = smeta$Name[which(smeta[,opt$factor_name] == opt$qc_label)]
+            # Reference samples (QCs or all samples). rownames(smeta) == rownames(x)
+            # in a DatasetExperiment, so this is independent of the sample-id column name.
+            ref_samples = rownames(smeta)[which(smeta[,opt$factor_name] == opt$qc_label)]
             ref_df = x[which(rownames(x) %in% ref_samples),]
 
             # Grand median intenisty (of median QC or all samples) for each feature
-            grand_med = as.numeric(apply(ref_df, 2, FUN = median, na.rm=T))
+            grand_med = as.numeric(apply(ref_df, 2, FUN = median, na.rm=TRUE))
 
 
             for(i in unique(smeta[[opt$batch_head]])){
 
               # Batch specific reference samples (QCs or all samples in specific batch)
-              sample_names = smeta$Name[which(smeta[[opt$batch_head]] == i)]
+              sample_names = rownames(smeta)[which(smeta[[opt$batch_head]] == i)]
               sample_names_ref = sample_names[which(sample_names %in% ref_samples)]
               temp_df = x[which(rownames(x) %in% sample_names_ref),]
 
               # Batch median intensity for each feature
-              batch_med = as.numeric(apply(temp_df, 2, FUN = median, na.rm=T))
+              batch_med = as.numeric(apply(temp_df, 2, FUN = median, na.rm=TRUE))
 
               # Coefficient used to normale (grand / batch intenisty)
               coeff = batch_med / grand_med

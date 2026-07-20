@@ -1,25 +1,36 @@
 #' Extract and reshape TargetLynx tables from a Waters-exported xlsx
 #'
-#' Reads every sheet matching `lcms_data*`, locates the compound blocks
+#' Reads the requested TargetLynx sheet(s), locates the compound blocks
 #' (rows starting with "Compound"), and returns a long data frame with one
 #' row per sample x compound. The `ID` column is overwritten with the
 #' extracted compound name.
 #'
 #' @param lcms_wb Either a path to a TargetLynx xlsx file, or an `openxlsx`
 #'   workbook object (e.g. from `openxlsx::loadWorkbook()`). A path is
-#'   preferred — it avoids a C-level bug in `loadWorkbook()` that surfaces
+#'   preferred - it avoids a C-level bug in `loadWorkbook()` that surfaces
 #'   on workbooks with certain styling/drawing XML.
 #' @param tl_headers Character vector of TargetLynx column headers to keep
 #'   (e.g. `c("ID", "Name", "Area", "ng/mL", "Response", "S/N")`).
+#' @param data_tab_names Explicit sheet name(s) to read (e.g. from
+#'   `tl_data.data_tab_names` in the YAML). `NULL` (default) falls back to
+#'   every sheet whose name contains `"lcms_data"`.
 #' @return A data frame of stacked compound blocks with columns matching `tl_headers`.
-#' @export
-extractTable <- function(lcms_wb, tl_headers) {
+#' @keywords internal
+extractTable <- function(lcms_wb, tl_headers, data_tab_names = NULL) {
 
   # Accept either a path or a Workbook object
   is_path = is.character(lcms_wb) && length(lcms_wb) == 1
   all_sheets = if(is_path) openxlsx::getSheetNames(lcms_wb) else lcms_wb[[".->sheet_names"]]
 
-  lcms_sheetNames = all_sheets[grep("lcms_data", all_sheets)]
+  if(is.null(data_tab_names)){
+    lcms_sheetNames = all_sheets[grep("lcms_data", all_sheets)]
+  } else {
+    miss = setdiff(data_tab_names, all_sheets)
+    if(length(miss))
+      stop(sprintf("[extractTable] data_tab_names sheet(s) not found in workbook: %s (available: %s)",
+                   paste(miss, collapse = ", "), paste(all_sheets, collapse = ", ")))
+    lcms_sheetNames = data_tab_names
+  }
 
   out_list = vector("list", length(lcms_sheetNames))
 

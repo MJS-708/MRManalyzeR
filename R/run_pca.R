@@ -1,4 +1,4 @@
-#' Pre-process a sample × feature matrix and run PCA
+#' Pre-process a sample x feature matrix and run PCA
 #'
 #' Standard metabolomics-style preprocessing pipeline:
 #' \enumerate{
@@ -8,11 +8,11 @@
 #'   \item Impute remaining NAs (per-feature minimum or half-minimum).
 #'   \item Optional transform (log2(x+1) or sqrt(x)).
 #'   \item Drop zero-variance features.
-#'   \item `prcomp(center, scale.)` — mean-centre and (optionally) autoscale.
+#'   \item `prcomp(center, scale.)` - mean-centre and (optionally) autoscale.
 #' }
 #'
 #' Returns the prcomp object plus a human-readable trace of the steps that
-#' were actually applied — reports embed this so the user can see at a
+#' were actually applied - reports embed this so the user can see at a
 #' glance what transformation went into the PCA.
 #'
 #' @param X numeric matrix (rows = samples, cols = features). May contain NAs.
@@ -22,14 +22,14 @@
 #' @param transform one of `"none"`, `"log2"`, `"sqrt"` (default `"log2"`).
 #' @param center logical, passed to [stats::prcomp()].
 #' @param scale logical, passed to [stats::prcomp()] as `scale.`.
-#' @param feat_na_max Maximum allowed fraction of NA values per feature (0–1).
+#' @param feat_na_max Maximum allowed fraction of NA values per feature (0-1).
 #'   Features exceeding this threshold are dropped before imputation.
 #'   Default `1` retains the original behaviour (only all-NA features are dropped).
-#'   Set e.g. `0.5` to also drop features missing in more than 50 % of samples.
-#' @param sample_na_max Maximum allowed fraction of NA values per sample (0–1).
+#'   Set e.g. `0.5` to also drop features missing in more than 50 percent of samples.
+#' @param sample_na_max Maximum allowed fraction of NA values per sample (0-1).
 #'   Samples exceeding this threshold are dropped before imputation.
 #'   Default `1` applies no sample filtering (original behaviour).
-#'   Set e.g. `0.8` to drop samples missing more than 80 % of features.
+#'   Set e.g. `0.8` to drop samples missing more than 80 percent of features.
 #' @return A list with elements
 #'   \describe{
 #'     \item{`pr`}{the `prcomp` object, or `NULL` if PCA could not be fit.}
@@ -39,8 +39,13 @@
 #'           `dropped_zero_var`}{counts of features/samples dropped at each step.}
 #'     \item{`steps`}{character vector of human-readable steps applied.}
 #'   }
+#' @examples
+#' X <- matrix(abs(rnorm(60, 100, 20)), nrow = 12,
+#'             dimnames = list(paste0("S", 1:12), paste0("F", 1:5)))
+#' res <- run_pca(X, transform = "log2")
+#' res$steps
 #' @export
-run_pca_pipeline = function(X,
+run_pca = function(X,
                             impute        = c("min", "half_min", "frac_min", "none"),
                             impute_frac   = 0.5,
                             transform     = c("log2", "sqrt", "none"),
@@ -108,7 +113,7 @@ run_pca_pipeline = function(X,
     fac_label = switch(impute,
                        min      = "minimum",
                        half_min = "half-minimum",
-                       frac_min = sprintf("%g × minimum", as.numeric(impute_frac)))
+                       frac_min = sprintf("%g x minimum", as.numeric(impute_frac)))
     steps = c(steps, sprintf("Imputed NAs with per-feature %s.", fac_label))
   } else {
     steps = c(steps, "No NA imputation.")

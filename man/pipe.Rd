@@ -3,6 +3,13 @@
 \name{\%>\%}
 \alias{\%>\%}
 \title{Pipe operator}
+\value{
+The value returned by the right-hand side expression, applied to
+  the left-hand side value.
+}
 \description{
 Re-exports the magrittr pipe so it's available inside package code.
+}
+\examples{
+c(1, 4, 9) \%>\% sqrt()
 }

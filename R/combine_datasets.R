@@ -3,7 +3,7 @@
 #' Used to merge separately-acquired LC-MS panels (e.g. GOM, cysLT, SPM) that
 #' share a common set of biological samples. Inputs can be either `.RDS`
 #' files (containing a `struct::DatasetExperiment`) or `.xlsx` workbooks
-#' produced by [`run_MRManalyzeR()`] — see [`load_dataset()`].
+#' produced by [`run_MRManalyzeR()`] - see [`load_dataset()`].
 #'
 #' Defaults:
 #' \itemize{
@@ -17,10 +17,10 @@
 #' @param paths Character vector of paths to `.RDS` or `.xlsx` files. May be
 #'   named (names are used as dataset tags); otherwise the filename stem
 #'   is used as the tag.
-#' @param feature_meta_cols Character vector — `variable_meta` columns kept
+#' @param feature_meta_cols Character vector - `variable_meta` columns kept
 #'   in the merged dataset. `NULL` (default) = intersect across inputs.
 #'   Missing columns in any single input are filled with `NA`.
-#' @param sample_meta_cols Character vector — `sample_meta` columns kept in
+#' @param sample_meta_cols Character vector - `sample_meta` columns kept in
 #'   the merged dataset. `NULL` (default) = intersect across inputs.
 #' @param feature_meta_rename Optional named list. Names are dataset tags
 #'   (or full paths); values are named character vectors of
@@ -38,11 +38,22 @@
 #' @param prefix_features Controls feature-name prefixing. `FALSE` (default):
 #'   never prefix. `TRUE`: always prefix every feature with its dataset tag
 #'   (e.g. `GOM__PGE2`). `"auto"`: prefix only features whose names collide
-#'   across two or more inputs — note that the resulting names depend on which
+#'   across two or more inputs - note that the resulting names depend on which
 #'   datasets are combined, so `"auto"` is not stable across different combine
 #'   runs.
 #' @param combined_name Name attribute of the resulting `DatasetExperiment`.
 #' @return A single `struct::DatasetExperiment` containing the merged data.
+#' @examples
+#' mk <- function(feats) struct::DatasetExperiment(
+#'   data = as.data.frame(matrix(1, 3, length(feats),
+#'            dimnames = list(c("S1", "S2", "S3"), feats))),
+#'   sample_meta = data.frame(Sample_ID = c("S1", "S2", "S3"),
+#'            row.names = c("S1", "S2", "S3")),
+#'   variable_meta = data.frame(Compound = feats, row.names = feats))
+#' d <- tempfile("comb_"); dir.create(d)
+#' p1 <- file.path(d, "a.RDS"); saveRDS(mk(c("A", "B")), p1)
+#' p2 <- file.path(d, "c.RDS"); saveRDS(mk(c("C", "D")), p2)
+#' combine_datasets(c(A = p1, B = p2))
 #' @export
 combine_datasets = function(paths,
                             feature_meta_cols   = NULL,
@@ -69,7 +80,7 @@ combine_datasets = function(paths,
 
   # Storage: extract to plain data.frames immediately so we can modify them
   # freely without hitting S4 slot-assignment validation on DatasetExperiment.
-  dats   = vector("list", length(paths))   # samples × features
+  dats   = vector("list", length(paths))   # samples x features
   smetas = vector("list", length(paths))   # sample metadata
   vmetas = vector("list", length(paths))   # variable (feature) metadata
 
@@ -82,7 +93,7 @@ combine_datasets = function(paths,
       stop(sprintf("[combine_datasets] '%s' lacks column '%s' in sample_meta.",
                    p, sample_id_col))
 
-    # Extract as plain data.frames — S4 accessors return copies anyway, and
+    # Extract as plain data.frames - S4 accessors return copies anyway, and
     # we need to mutate dimnames freely before final assembly.
     dat   = as.data.frame(de$data)
     smeta = as.data.frame(de$sample_meta)
@@ -186,7 +197,7 @@ combine_datasets = function(paths,
     }
   }
 
-  # 5. Resolve column lists — intersect-by-default
+  # 5. Resolve column lists - intersect-by-default
   if(is.null(feature_meta_cols))
     feature_meta_cols = Reduce(intersect, lapply(vmetas, colnames))
   if(is.null(sample_meta_cols))
@@ -200,7 +211,7 @@ combine_datasets = function(paths,
   if(!sample_id_col %in% sample_meta_cols)
     sample_meta_cols = c(sample_id_col, sample_meta_cols)
 
-  # 6. Align variable_meta to chosen columns (per-dataset; missing → NA)
+  # 6. Align variable_meta to chosen columns (per-dataset; missing -> NA)
   vmetas = lapply(vmetas, function(vm) .align_cols(vm, feature_meta_cols))
 
   # 7. Intersect samples by Sample_ID

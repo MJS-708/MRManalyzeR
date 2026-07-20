@@ -6,8 +6,8 @@
 #'
 #' Method auto-selection for comparisons:
 #' \itemize{
-#'   \item 2 levels  → t-test + Wilcoxon
-#'   \item 3+ levels → ANOVA + Kruskal-Wallis (+ Tukey HSD + pairwise Wilcoxon post-hoc)
+#'   \item 2 levels  -> t-test + Wilcoxon
+#'   \item 3+ levels -> ANOVA + Kruskal-Wallis (+ Tukey HSD + pairwise Wilcoxon post-hoc)
 #' }
 #'
 #' @param de A `struct::DatasetExperiment` (from `run_MRManalyzeR()` or `readRDS()`).
@@ -15,12 +15,24 @@
 #' @return A list with elements `stats`, `correlations`, `linear_models`,
 #'   each a data frame (possibly with 0 rows if the corresponding YAML
 #'   block was empty).
+#' @examples
+#' m  <- data.frame(A = c(10, 12, 11, 20, 24, 22), B = c(5, 6, 5, 11, 13, 12),
+#'                  row.names = paste0("S", 1:6))
+#' fm <- data.frame(Compound = c("A", "B"), row.names = c("A", "B"))
+#' sm <- data.frame(Sample_ID = paste0("S", 1:6),
+#'                  Group = rep(c("ctrl", "trt"), each = 3),
+#'                  row.names = paste0("S", 1:6))
+#' de <- struct::DatasetExperiment(data = m, sample_meta = sm, variable_meta = fm)
+#' params <- list(comparisons = list(enabled = TRUE, entries = list(
+#'   list(name = "ctrl_vs_trt",
+#'        compare = list(factor = "Group", levels = c("ctrl", "trt"))))))
+#' run_stats(de, params)$stats
 #' @export
 run_stats = function(de, st_params){
 
-  comparisons   = st_params$comparisons   %||% list()
-  correlations  = st_params$correlations  %||% list()
-  linear_models = st_params$linear_models %||% list()
+  comparisons   = .section_entries(st_params$comparisons,   "comparisons")
+  correlations  = .section_entries(st_params$correlations,  "correlations")
+  linear_models = .section_entries(st_params$linear_models, "linear_models")
 
   # p-value adjustment is hard-coded to BH (= FDR). Bonferroni / others
   # were dropped from the YAML for simplicity.
@@ -41,7 +53,6 @@ run_stats = function(de, st_params){
 #' @noRd
 .run_comparisons = function(de, comparisons, p_adjust, sig_threshold){
 
-  comparisons = .filter_enabled(comparisons)
   if(length(comparisons) == 0)
     return(.empty_stats_df())
 
@@ -68,7 +79,7 @@ run_stats = function(de, st_params){
     stop(sprintf("Comparison '%s': compare.factor and compare.levels required.", comp_name))
 
   # Build a single combined subset: user-supplied conditions + the level
-  # restriction. de_subset() supports vector values via %in%, so we can pass
+  # restriction. subset_dataset() supports vector values via %in%, so we can pass
   # `levels_keep` directly. Doing it in one call avoids mutating the DE in
   # place (which trips SummarizedExperiment's assay-replacement check).
   cond = comp$subset
@@ -78,11 +89,11 @@ run_stats = function(de, st_params){
     stop(sprintf("Comparison '%s': factor '%s' not in sample_meta.",
                  comp_name, factor_name))
   cond[[factor_name]] = levels_keep
-  de_sub = de_subset(de, conditions = cond)
+  de_sub = subset_dataset(de, conditions = cond)
 
   group = factor(de_sub$sample_meta[[factor_name]], levels = levels_keep)
   if(nlevels(droplevels(group)) < 2){
-    warning(sprintf("Comparison '%s': fewer than 2 non-empty levels — skipped.",
+    warning(sprintf("Comparison '%s': fewer than 2 non-empty levels - skipped.",
                     comp_name))
     return(.empty_stats_df())
   }
@@ -190,7 +201,6 @@ run_stats = function(de, st_params){
 #' @keywords internal
 #' @noRd
 .run_correlations = function(de, correlations, p_adjust, sig_threshold){
-  correlations = .filter_enabled(correlations)
   if(length(correlations) == 0)
     return(.empty_corr_df())
 
@@ -212,7 +222,7 @@ run_stats = function(de, st_params){
                 else paste(sprintf("%s=%s", names(sub), unlist(sub)),
                            collapse = ", ")
 
-      de_sub = de_subset(de, conditions = if(length(sub)) as.list(sub) else NULL)
+      de_sub = subset_dataset(de, conditions = if(length(sub)) as.list(sub) else NULL)
       X = as.matrix(de_sub$data)
 
       if(ncol(X) < 2 || nrow(X) < 3){
@@ -263,7 +273,7 @@ run_stats = function(de, st_params){
   p_mat = 2 * stats::pt(-abs(t_mat), df = n_mat - 2)
   diag(p_mat) = NA_real_                              # self-correlation
 
-  # Lower triangle → long (omit diagonal / self-pairs unless requested)
+  # Lower triangle -> long (omit diagonal / self-pairs unless requested)
   feats = colnames(X)
   idx = which(lower.tri(r_mat, diag = include_self), arr.ind = TRUE)
   data.frame(
@@ -286,7 +296,6 @@ run_stats = function(de, st_params){
 #' @keywords internal
 #' @noRd
 .run_linear_models = function(de, linear_models, p_adjust, sig_threshold){
-  linear_models = .filter_enabled(linear_models)
   if(length(linear_models) == 0)
     return(.empty_lm_df())
 
@@ -294,7 +303,7 @@ run_stats = function(de, st_params){
     name = mod$name %||% "unnamed_model"
     rhs  = mod$formula %||% stop(sprintf("Linear model '%s': `formula` required.", name))
     cond = mod$subset; if(!is.null(cond)) cond = as.list(cond)
-    de_sub = de_subset(de, conditions = cond)
+    de_sub = subset_dataset(de, conditions = cond)
 
     feats = colnames(de_sub$data)
     smeta = de_sub$sample_meta
@@ -376,7 +385,7 @@ run_stats = function(de, st_params){
 
 #' Translate raw lm() coefficient names into something readable.
 #'
-#' Examples (with Treatment ∈ {Ctrl, HDM_Curdlan}, Sex ∈ {Female, Male}):
+#' Examples (with Treatment  in  {Ctrl, HDM_Curdlan}, Sex  in  {Female, Male}):
 #'  "(Intercept)"           -> "Intercept (ref: Treatment=Ctrl; Sex=Female)"
 #'  "TreatmentHDM_Curdlan"  -> "Treatment: HDM_Curdlan (vs Ctrl)"
 #'  "SexMale:TreatmentHDM_Curdlan" -> kept as-is (interaction); doc'd elsewhere
@@ -408,16 +417,29 @@ run_stats = function(de, st_params){
   }, character(1), USE.NAMES = FALSE)
 }
 
-#' Drop entries with `enabled: False`. Default = TRUE if absent.
+#' Extract the entry list from a stats section, honouring its section-level
+#' `enabled:` toggle.
+#'
+#' Schema: each of `comparisons:`, `correlations:`, `linear_models:` is a
+#' block with a section-level `enabled:` switch and an `entries:` list:
+#'   comparisons:
+#'     enabled: True
+#'     entries:
+#'       - name: ...
+#' Returns `list()` when the section is absent or `enabled: False`; otherwise
+#' the `entries:` list. A bare top-level list errors loudly so an un-migrated
+#' config is caught rather than silently producing no results.
 #' @keywords internal
 #' @noRd
-.filter_enabled = function(entries){
-  if(length(entries) == 0) return(entries)
-  keep = vapply(entries, function(e){
-    en = e$enabled
-    if(is.null(en)) TRUE else isTRUE(en)
-  }, logical(1))
-  entries[keep]
+.section_entries = function(section, section_name){
+  if(is.null(section)) return(list())
+  if(!is.null(section$entries) || !is.null(section$enabled)){
+    if(isFALSE(section$enabled)) return(list())
+    return(section$entries %||% list())
+  }
+  stop(sprintf(
+    "[run_stats] '%s:' must be a block with 'enabled:' and 'entries:' (got a bare list). Wrap the list under 'entries:' and add 'enabled: True'.",
+    section_name))
 }
 
 #' @keywords internal

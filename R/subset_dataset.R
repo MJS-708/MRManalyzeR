@@ -14,8 +14,16 @@
 #'   `NA` after subsetting are dropped from both `data` and `variable_meta`.
 #' @return A new `DatasetExperiment` with `data`, `sample_meta`, and
 #'   `variable_meta` consistently sliced.
+#' @examples
+#' m  <- data.frame(A = c(10, 20, 30), B = c(1, 2, 3),
+#'                  row.names = c("S1", "S2", "S3"))
+#' fm <- data.frame(Compound = c("A", "B"), row.names = c("A", "B"))
+#' sm <- data.frame(Sample_ID = c("S1", "S2", "S3"), Group = c("x", "y", "x"),
+#'                  row.names = c("S1", "S2", "S3"))
+#' de <- struct::DatasetExperiment(data = m, sample_meta = sm, variable_meta = fm)
+#' subset_dataset(de, conditions = list(Group = "x"))
 #' @export
-de_subset = function(de, conditions = NULL, features = NULL,
+subset_dataset = function(de, conditions = NULL, features = NULL,
                      drop_empty_features = TRUE){
 
   smeta = de$sample_meta
@@ -27,14 +35,14 @@ de_subset = function(de, conditions = NULL, features = NULL,
   if(length(conditions)){
     for(col in names(conditions)){
       if(!col %in% colnames(smeta))
-        stop(sprintf("de_subset: column '%s' not in sample_meta.", col))
+        stop(sprintf("subset_dataset: column '%s' not in sample_meta.", col))
       keep_row = keep_row & (smeta[[col]] %in% conditions[[col]])
     }
   }
 
   smeta_out = smeta[keep_row, , drop = FALSE]
   if(nrow(smeta_out) == 0)
-    warning("de_subset: subset produced 0 samples.")
+    warning("subset_dataset: subset produced 0 samples.")
 
   data_out  = data[keep_row, , drop = FALSE]
 
@@ -42,7 +50,7 @@ de_subset = function(de, conditions = NULL, features = NULL,
   if(!is.null(features)){
     miss = setdiff(features, colnames(data_out))
     if(length(miss))
-      warning("de_subset: features not in matrix: ",
+      warning("subset_dataset: features not in matrix: ",
               paste(head(miss, 5), collapse = ", "),
               if(length(miss) > 5) " ..." else "")
     keep_feat = intersect(features, colnames(data_out))

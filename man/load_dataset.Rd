@@ -24,3 +24,14 @@ xlsx inputs (xlsx loading reconstructs a `DatasetExperiment` from the
 standard sheets `feature_metadata`, `sample_metadata`, `matrix` written
 by [`run_MRManalyzeR()`]).
 }
+\examples{
+de <- struct::DatasetExperiment(
+  data          = data.frame(A = c(1, 2), B = c(3, 4),
+                             row.names = c("S1", "S2")),
+  sample_meta   = data.frame(Sample_ID = c("S1", "S2"),
+                             row.names = c("S1", "S2")),
+  variable_meta = data.frame(Compound = c("A", "B"),
+                             row.names = c("A", "B")))
+f <- tempfile(fileext = ".RDS"); saveRDS(de, f)
+load_dataset(f)
+}

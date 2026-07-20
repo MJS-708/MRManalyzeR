@@ -12,16 +12,19 @@
 #'   to. Defaults to a fresh `tempdir()` so repeated calls do not collide.
 #' @param open Logical. Open the HTML reports in the browser / RStudio
 #'   viewer after rendering? Default `TRUE` in interactive sessions.
+#' @param render Logical. Render the HTML reports? Default `TRUE`. Set
+#'   `FALSE` to build the peak matrix + xlsx/RDS outputs only (no pandoc) -
+#'   a quick smoke test of the processing pipeline.
 #' @return Invisibly, the list returned by [`run_MRManalyzeR()`]; the
 #'   resolved results directory is attached as attribute `"results_dir"`.
 #' @examples
-#' \dontrun{
-#'   res <- MRManalyzeR::run_example()
-#'   attr(res, "results_dir")   # where the xlsx + html landed
-#' }
+#' # Light run: build the peak matrix + outputs, skip HTML report rendering.
+#' res <- run_example(render = FALSE, open = FALSE)
+#' attr(res, "results_dir")   # where the xlsx + rds landed
 #' @export
 run_example = function(results_dir = tempfile("MRManalyzeR_example_"),
-                       open        = interactive()){
+                       open        = interactive(),
+                       render      = TRUE){
 
   data_xlsx = system.file("extdata", "example_data.xlsx",
                           package = "MRManalyzeR")
@@ -29,22 +32,28 @@ run_example = function(results_dir = tempfile("MRManalyzeR_example_"),
                           package = "MRManalyzeR")
   if(!nzchar(data_xlsx) || !file.exists(data_xlsx))
     stop("[run_example] bundled example_data.xlsx not found ",
-         "— reinstall MRManalyzeR.")
+         "- reinstall MRManalyzeR.")
   if(!nzchar(base_yaml) || !file.exists(base_yaml))
     stop("[run_example] bundled example_config.yml not found ",
-         "— reinstall MRManalyzeR.")
+         "- reinstall MRManalyzeR.")
 
   dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
 
-  # `load_yaml()` already resolves !concat_path so the returned `cfg` has
+  # `load_config()` already resolves !concat_path so the returned `cfg` has
   # plain string paths. We override the data + result locations to point at
   # the bundled xlsx and a writable temp folder, then write the modified
   # YAML alongside the outputs so the user can inspect / edit it.
-  cfg = load_yaml(base_yaml)
+  cfg = load_config(base_yaml)
   cfg$project$paths$data_dir    = dirname(data_xlsx)
   cfg$project$paths$result_dir  = results_dir
   cfg$project$paths$project_dir = results_dir
   cfg$project$paths$fn          = tools::file_path_sans_ext(basename(data_xlsx))
+
+  # Light mode: skip the (pandoc-heavy) report renders, keep the matrix build.
+  if(!isTRUE(render)){
+    cfg$project$data_quality_report$execute <- FALSE
+    cfg$project$stats_report$execute        <- FALSE
+  }
 
   out_yaml = file.path(results_dir, "example_config.yml")
   yaml::write_yaml(cfg, out_yaml)

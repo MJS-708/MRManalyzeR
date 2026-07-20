@@ -24,7 +24,20 @@ tabs.
 \details{
 Method auto-selection for comparisons:
 \itemize{
-  \item 2 levels  → t-test + Wilcoxon
-  \item 3+ levels → ANOVA + Kruskal-Wallis (+ Tukey HSD + pairwise Wilcoxon post-hoc)
+  \item 2 levels  -> t-test + Wilcoxon
+  \item 3+ levels -> ANOVA + Kruskal-Wallis (+ Tukey HSD + pairwise Wilcoxon post-hoc)
 }
+}
+\examples{
+m  <- data.frame(A = c(10, 12, 11, 20, 24, 22), B = c(5, 6, 5, 11, 13, 12),
+                 row.names = paste0("S", 1:6))
+fm <- data.frame(Compound = c("A", "B"), row.names = c("A", "B"))
+sm <- data.frame(Sample_ID = paste0("S", 1:6),
+                 Group = rep(c("ctrl", "trt"), each = 3),
+                 row.names = paste0("S", 1:6))
+de <- struct::DatasetExperiment(data = m, sample_meta = sm, variable_meta = fm)
+params <- list(comparisons = list(enabled = TRUE, entries = list(
+  list(name = "ctrl_vs_trt",
+       compare = list(factor = "Group", levels = c("ctrl", "trt"))))))
+run_stats(de, params)$stats
 }

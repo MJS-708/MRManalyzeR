@@ -8,8 +8,12 @@
 #' @param blank_samples Character vector of sample names to treat as blanks.
 #' @param scalar Numeric multiplier applied to the feature minimum (e.g. 0.2).
 #' @return Data frame of samples x features with NAs imputed.
+#' @examples
+#' m <- data.frame(A = c(10, 5, NA), B = c(2, NA, 4),
+#'                 row.names = c("S1", "S2", "S3"))
+#' impute_missing(m, blank_samples = character(0), scalar = 0.5)
 #' @export
-replaceNA = function(df, blank_samples, scalar){
+impute_missing = function(df, blank_samples, scalar){
 
   if(isTRUE(scalar)){
     stop("`scalar` must be numeric (e.g. 0.2), not TRUE.")

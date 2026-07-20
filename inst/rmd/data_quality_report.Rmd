@@ -31,20 +31,34 @@ if(!exists("report_pars") || is.null(report_pars))
 
 `%||%` = function(a, b) if(is.null(a)) b else a
 
-# Universal params
-summary_head           = report_pars$summary_head
-qc_real                = report_pars$qc_real
-qc_label               = report_pars$qc_label
-qc_head                = report_pars$qc_head
-qc_head_ID             = report_pars$qc_head_ID
-global_boxpot_factor   = report_pars$global_boxpot_factor
-intensity_plot_levels  = report_pars$intensity_plot_levels
-intensity_plot_head    = report_pars$intensity_plot_head
-intensity_plot_head_ID = report_pars$intensity_plot_head_ID
-yaxis_quant            = report_pars$yaxis_quant %||% 0.95
+# -- Sample identification --
+# One column classifies every row; qc_label / sample_labels name the values
+# marking QC injections and biological samples. Every section references
+# these, so the classifier column is set once, not per-section.
+sample_type_head = report_pars$sample_type_head %||% "Sample_type"
+qc_label         = report_pars$qc_label         %||% "QC"
+sample_labels    = report_pars$sample_labels    %||% "Sample"
+
+# Which sample types appear in the intensity-drift / Q-Q plots (default QC + samples)
+intensity_plot_levels = report_pars$intensity_plot_levels %||%
+                          unique(c(qc_label, sample_labels))
+
+yaxis_quant  = report_pars$yaxis_quant %||% 0.95
+yaxis_scalar = as.numeric(report_pars$yaxis_scalar %||% 1.3)
+
+# sample_metadata column names -- configurable since studies name these
+# differently; defaults match the common convention.
+injection_order_head = report_pars$injection_order_head %||% "Injection_order"
+sample_id_head        = report_pars$sample_id_head       %||% "Sample_ID"
 
 units      = pmp_params$units %||% pmp_params$datatype %||%
              project_paths$datatype %||% ""
+# Y-value label for point tooltips: the datatype units (ng/mL, Response, …),
+# or "value" when unset. Coerced to a scalar (datatype may arrive as a list).
+value_label = local({
+  u = as.character(units)[1]
+  if(!is.na(u) && nzchar(u)) u else "value"
+})
 bc_header  = pmp_params$bc_header
 
 # Performance / layout knobs
@@ -56,16 +70,14 @@ if(length(qq_transforms) == 1) qq_transforms = as.character(qq_transforms)
 fig_scale                   = as.numeric(report_pars$fig_scale %||% 1)
 
 # QC PCA config
-qc_pca_include = isTRUE(report_pars$qc_pca$include  %||% FALSE)
+qc_pca_include = isTRUE(report_pars$qc_pca$enabled  %||% FALSE)
 qc_pca_color   = report_pars$qc_pca$color_by        %||% character(0)
 # Default INCLUDES the QC sample type so the QC PCA shows QCs alongside
-# samples (drift / batch / clustering checks). Override via
-# stats_report.qc_pca.levels: in YAML.
-qc_pca_levels  = report_pars$qc_pca$levels          %||%
-                   unique(c("Sample", qc_label))
-qc_pca_head    = report_pars$qc_pca$head            %||% "Sample_type"
+# samples (drift / batch / clustering checks). Override qc_pca.levels: in YAML.
+qc_pca_levels  = report_pars$qc_pca$levels %||% unique(c(sample_labels, qc_label))
+qc_pca_head    = report_pars$qc_pca$head   %||% sample_type_head
 qc_pca_label   = report_pars$qc_pca$label           %||% "none"
-qc_pca_label_factor = report_pars$qc_pca$label_factor %||% "Sample_ID"
+qc_pca_label_factor = report_pars$qc_pca$label_factor %||% sample_id_head
 qc_pca_ellipse = report_pars$qc_pca$ellipse         %||% "none"
 
 # Preprocessing for QC PCA (with sensible defaults)
@@ -154,7 +166,7 @@ compound_names  = compoundInfo$Compound
 
 DT::datatable(
   metadata %>%
-    dplyr::group_by(.data[[summary_head]]) %>%
+    dplyr::group_by(.data[[sample_type_head]]) %>%
     dplyr::summarize(`Number of samples` = dplyr::n(), .groups = "drop")
 )
 ```
@@ -167,8 +179,10 @@ dm = as.data.frame(data_matrix)
 n_feat = ncol(dm)
 feat_names = colnames(dm) %||% character(0)
 
-qc_idx     = which(metadata[[qc_head]] == qc_label)
-sample_idx = setdiff(seq_len(nrow(metadata)), qc_idx)
+# CV_QC over QC rows; CV_sample over biological-sample rows only (NOT
+# "everything non-QC", which would fold in blanks / calibration curves).
+qc_idx     = which(metadata[[sample_type_head]] %in% qc_label)
+sample_idx = which(metadata[[sample_type_head]] %in% sample_labels)
 
 cv_fn = function(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE) * 100
 
@@ -176,20 +190,24 @@ cv_fn = function(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE) * 100
 # mismatch — even when qc_idx is empty or n_feat is zero.
 cv_col = function(idx){
   if(n_feat == 0 || length(idx) < 2) return(rep(NA_real_, n_feat))
-  round(vapply(dm, function(x) cv_fn(x[idx]), numeric(1)), 2)
+  round(vapply(dm, function(x) cv_fn(x[idx]), numeric(1)), 1)
 }
 
+cv_qc_vec     = cv_col(qc_idx)
+cv_sample_vec = cv_col(sample_idx)
 cv_table = data.frame(
   Compound  = feat_names,
-  CV_QC     = cv_col(qc_idx),
-  CV_sample = cv_col(sample_idx),
+  CV_QC     = cv_qc_vec,
+  CV_sample = cv_sample_vec,
+  check.names      = FALSE,
   stringsAsFactors = FALSE
 )
+cv_table[["CV_sample/CV_QC"]] = round(cv_sample_vec / cv_qc_vec, 2)
 
 if(length(qc_idx) < 2){
   cat(sprintf(
-    "_No QC samples detected (metadata$%s == '%s' had %d row(s)). CV_QC column shown as NA._\n\n",
-    qc_head, qc_label, length(qc_idx)))
+    "_No QC samples detected (metadata$%s in {%s} had %d row(s)). CV_QC column shown as NA._\n\n",
+    sample_type_head, paste(qc_label, collapse = ", "), length(qc_idx)))
 }
 
 DT::datatable(cv_table, filter = "top",
@@ -202,18 +220,14 @@ DT::datatable(cv_table, filter = "top",
 
 ```{r intensity-dropdown, results="asis", eval=plot_intensity_per_compound, fig.width=10*fig_scale, fig.height=5*fig_scale}
 # Subset to requested sample types
-keep = metadata[[intensity_plot_head]] %in% intensity_plot_levels
+keep = metadata[[sample_type_head]] %in% intensity_plot_levels
 inj_data = data_matrix[keep, , drop = FALSE]
-inj_data$injection_order = if("Injection_order" %in% colnames(metadata))
-  metadata$Injection_order[keep] else seq_len(nrow(inj_data))
-# Colour-by factor; coalesce NA values to the Sample_type label so e.g.
-# QC injections (which usually have no Treatment) show up as "QC" rather
-# than legend group "NA" when colouring by Treatment.
-inj_data$type = as.character(metadata[[intensity_plot_head_ID]][keep])
-.fallback     = as.character(metadata[[intensity_plot_head]][keep])
-inj_data$type[is.na(inj_data$type)] = .fallback[is.na(inj_data$type)]
-inj_data$.sample_id = if("Sample_ID" %in% colnames(metadata))
-  as.character(metadata$Sample_ID[keep]) else rownames(inj_data)
+inj_data$injection_order = if(injection_order_head %in% colnames(metadata))
+  metadata[[injection_order_head]][keep] else seq_len(nrow(inj_data))
+# Colour points by the sample-type classifier.
+inj_data$type = as.character(metadata[[sample_type_head]][keep])
+inj_data$.sample_id = if(sample_id_head %in% colnames(metadata))
+  as.character(metadata[[sample_id_head]][keep]) else rownames(inj_data)
 
 make_safe_id = function(x) gsub("[^A-Za-z0-9_\\-]", "_", x)
 safe_ids = vapply(compound_names, make_safe_id, character(1))
@@ -253,12 +267,11 @@ function showCompoundPlot(id){
 for(i in seq_along(compound_names)){
   compound = compound_names[i]
   cid      = safe_ids[i]
-  axis_limit = quantile(inj_data[[compound]], prob = yaxis_quant, na.rm = TRUE) * 1.3
-  inj_data$.tooltip = sprintf("Sample: %s<br>%s: %s<br>Order: %s<br>%s: %.3g",
-                              inj_data$.sample_id, intensity_plot_head_ID,
-                              as.character(inj_data$type),
-                              as.character(inj_data$injection_order),
-                              compound, inj_data[[compound]])
+  axis_limit = quantile(inj_data[[compound]], prob = yaxis_quant, na.rm = TRUE) * yaxis_scalar
+  inj_data$.tooltip = sprintf("%s: %s<br>%s: %.3g<br>%s: %s",
+                              sample_id_head, inj_data$.sample_id,
+                              value_label, inj_data[[compound]],
+                              sample_type_head, inj_data$type)
 
   p = ggplot2::ggplot(inj_data,
                       ggplot2::aes(injection_order, .data[[compound]])) +
@@ -282,10 +295,10 @@ for(i in seq_along(compound_names)){
 
 `r if(!plot_qq_per_compound) "_Skipped — set_ \x60plot_qq_per_compound: True\x60 _in YAML to enable._"`
 
-`r if(plot_qq_per_compound) sprintf("Sample-level normality assessment per compound. Filter applied to drop blanks/QCs/calibration: \x60%s\x60 _∈ {%s}_ → _%d samples kept (of %d in metadata). One tab per transform listed in_ \x60qq_transform\x60_:_ %s_. Caption shows Shapiro-Wilk W and p (3 ≤ n ≤ 5000)._", intensity_plot_head, paste(intensity_plot_levels, collapse=", "), sum(metadata[[intensity_plot_head]] %in% intensity_plot_levels), nrow(metadata), paste(qq_transforms, collapse=", "))`
+`r if(plot_qq_per_compound) sprintf("Sample-level normality assessment per compound. Filter applied to drop blanks/QCs/calibration: \x60%s\x60 _∈ {%s}_ → _%d samples kept (of %d in metadata). One tab per transform listed in_ \x60qq_transform\x60_:_ %s_. Caption shows Shapiro-Wilk W and p (3 ≤ n ≤ 5000)._", sample_type_head, paste(intensity_plot_levels, collapse=", "), sum(metadata[[sample_type_head]] %in% intensity_plot_levels), nrow(metadata), paste(qq_transforms, collapse=", "))`
 
 ```{r qq-dropdown, results="asis", eval=plot_qq_per_compound, fig.width=6*fig_scale, fig.height=5*fig_scale}
-keep_qq = metadata[[intensity_plot_head]] %in% intensity_plot_levels
+keep_qq = metadata[[sample_type_head]] %in% intensity_plot_levels
 qq_data = data_matrix[keep_qq, , drop = FALSE]
 
 .qq_apply = function(v, mode){
@@ -376,7 +389,7 @@ function showQQPlot_%s(id){
 
 # 6. QC PCA (drift / batch / confounder inspection)
 
-`r if(!qc_pca_include) "_Skipped — set_ \x60qc_pca.include: True\x60 _in YAML to enable._"`
+`r if(!qc_pca_include) "_Skipped — set_ \x60qc_pca.enabled: True\x60 _in YAML to enable._"`
 
 `r if(qc_pca_include) sprintf("PCA computed once on the filtered subset; one plot per coloring listed in_ \x60qc_pca.color_by\x60_:_ %s.", paste(qc_pca_color, collapse=", "))`
 
@@ -396,7 +409,7 @@ smeta_pca = metadata[keep, , drop = FALSE]
 rownames(X)         = .qc_rn
 rownames(smeta_pca) = .qc_rn
 
-res_pca = run_pca_pipeline(X,
+res_pca = run_pca(X,
                            impute        = qc_pca_impute,
                            impute_frac   = qc_pca_impute_frac,
                            transform     = qc_pca_transform,
@@ -443,7 +456,7 @@ if(is.null(res_pca$pr)){
 
     is_num = is.numeric(sc$.color) ||
              (suppressWarnings(!any(is.na(as.numeric(sc$.color)))) &&
-              col_name %in% c("Injection_order", "Run_order"))
+              col_name == injection_order_head)
     if(is_num) sc$.color = as.numeric(sc$.color)
 
     sc$.tooltip = sprintf("%s: %s<br>%s: %s<br>PC1: %.3g<br>PC2: %.3g",
@@ -457,8 +470,9 @@ if(is.null(res_pca$pr)){
           ggplot2::theme_classic(base_size = 13) +
           ggplot2::theme(legend.position = "bottom")
 
-    # Continuous (Injection_order, Run_order) → viridis_c;
-    # categorical (Sample_type, Chrom_Batch as factor) → Set1 brewer.
+    # Continuous (injection_order_head, or any already-numeric column) →
+    # viridis_c; categorical (e.g. Sample_type, Chrom_Batch as factor) →
+    # Set1 brewer.
     p = if(is_num) p + ggplot2::scale_color_viridis_c()
         else       p + ggplot2::scale_color_brewer(palette = "Set1",
                                                    na.value = "grey60")

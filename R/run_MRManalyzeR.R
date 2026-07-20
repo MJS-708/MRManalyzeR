@@ -4,7 +4,7 @@
 #' \itemize{
 #'   \item loads a project YAML,
 #'   \item (optionally) reads the TargetLynx xlsx workbook and builds the
-#'     processed peak matrix — gated by `PeakMatrixProcessing.execute`,
+#'     processed peak matrix - gated by `PeakMatrixProcessing.execute`,
 #'   \item writes the processed matrix to xlsx + RDS and persists the YAML
 #'     parameters alongside,
 #'   \item runs the statistical analyses defined under `stats_report:`
@@ -30,13 +30,17 @@
 #'   `stats_tables`, and the resolved output paths. When `paths.datatype` is a
 #'   vector (e.g. `["Area", "Response", "Conc"]`), the function loops over each
 #'   datatype and returns a list of per-datatype results.
+#' @examples
+#' # run_example() writes a config for the bundled dataset and drives
+#' # run_MRManalyzeR(); render = FALSE keeps it to the peak-matrix build.
+#' run_example(render = FALSE, open = FALSE)
 #' @export
 run_MRManalyzeR = function(path_yaml){
 
   stopifnot(file.exists(path_yaml))
 
   # --- Load & unpack YAML -------------------------------------------------
-  project_params = load_yaml(path_yaml)
+  project_params = load_config(path_yaml)
 
   project_paths = project_params$project$paths
   pmp_params    = project_params$project$PeakMatrixProcessing
@@ -123,14 +127,20 @@ run_MRManalyzeR = function(path_yaml){
   }
 
   # --- Statistics ---------------------------------------------------------
+  # Each stats section is a block with `enabled:` + `entries:`;
+  # .section_entries() honours the toggle and returns the runnable entries.
   stats_tables = NULL
-  if(isTRUE(st_params$execute) &&
-     (length(st_params$comparisons) || length(st_params$correlations) ||
-        length(st_params$linear_models))){
-    message("Running statistics...")
-    stats_tables = run_stats(combined_datamatrices, st_params)
-    append_stats_xlsx(out_stats_xlsx, stats_tables)
-    message("Wrote stats to: ", out_stats_xlsx)
+  if(isTRUE(st_params$execute)){
+    has_stats =
+      length(.section_entries(st_params$comparisons,   "comparisons"))   > 0 ||
+      length(.section_entries(st_params$correlations,  "correlations"))  > 0 ||
+      length(.section_entries(st_params$linear_models, "linear_models")) > 0
+    if(has_stats){
+      message("Running statistics...")
+      stats_tables = run_stats(combined_datamatrices, st_params)
+      append_stats_xlsx(out_stats_xlsx, stats_tables)
+      message("Wrote stats to: ", out_stats_xlsx)
+    }
   }
 
   # --- Optional reports ---------------------------------------------------
@@ -170,24 +180,72 @@ run_MRManalyzeR = function(path_yaml){
   xlsx_path = sprintf("%s/%s.xlsx", project_paths$data_dir, project_paths$fn)
   message("Reading ", xlsx_path)
 
+  # Sample-metadata contract columns (overridable for studies that name them
+  # differently). name_col matches LC-MS injection / data-matrix row names.
+  name_col      = pmp_params$name_col      %||% "Name"
+  include_col   = pmp_params$include_col   %||% "Include"
+  include_value = pmp_params$include_value %||% "YES"
+
+  # feature_metadata contract columns (canonicalised internally to
+  # Compound / Processing_name / Report / Comment).
+  compound_col        = pmp_params$compound_col        %||% "Compound"
+  processing_name_col = pmp_params$processing_name_col %||% "Processing_name"
+  report_col          = pmp_params$report_col          %||% "Report"
+  report_value        = pmp_params$report_value        %||% "YES"
+  comment_col         = pmp_params$comment_col         %||% "Comment"
+
   # Path-based reads avoid an openxlsx::loadWorkbook() bug on workbooks
   # with certain styling/drawing XML, and are also faster.
   fdata    = openxlsx::read.xlsx(xlsx_path, sheet = "feature_metadata")
-  metadata = openxlsx::read.xlsx(xlsx_path, sheet = "sample_metadata") %>%
-    dplyr::filter(Include == "YES")
+  metadata = openxlsx::read.xlsx(xlsx_path, sheet = "sample_metadata")
+  if(!include_col %in% colnames(metadata))
+    stop(sprintf("[run_MRManalyzeR] sample_metadata has no '%s' column (PeakMatrixProcessing.include_col).", include_col))
+  metadata = metadata[which(metadata[[include_col]] == include_value), , drop = FALSE]
 
-  message("Extracting TargetLynx tables...")
-  lcms_table = extractTable(xlsx_path, tl_headers = pmp_params$tl_headers) %>%
-    subset(Name != "")
+  # Data source is selected by two mutually-exclusive nested blocks, each
+  # with its own `enabled:` toggle and source-specific params:
+  #   skyline_data: { enabled, data_tab_names, signal_filter }   # LOD/LOQ
+  #   tl_data:      { enabled, data_tab_names, tl_headers, snr }  # SNR
+  # Exactly one must be enabled.
+  sky = pmp_params$skyline_data %||% list()
+  tl  = pmp_params$tl_data      %||% list()
+  sky_on = isTRUE(sky$enabled)
+  tl_on  = isTRUE(tl$enabled)
+  if(sky_on && tl_on)
+    stop("[run_MRManalyzeR] Both 'skyline_data' and 'tl_data' are enabled under PeakMatrixProcessing - enable exactly one.")
+  if(!sky_on && !tl_on)
+    stop("[run_MRManalyzeR] Neither 'skyline_data' nor 'tl_data' is enabled under PeakMatrixProcessing - enable exactly one.")
+
+  if(sky_on){
+    data_source    = "skyline"
+    data_tab_names = sky$data_tab_names %||% "skyline_data"
+    signal_filter  = sky$signal_filter %||% FALSE   # LOD | LOQ | False
+    snr            = FALSE
+    tl_headers     = NULL
+  } else {
+    data_source    = "targetlynx"
+    data_tab_names = tl$data_tab_names               # NULL => extractTable greps "lcms_data"
+    tl_headers     = tl$tl_headers
+    snr            = tl$snr %||% FALSE               # numeric threshold, or FALSE to skip
+    signal_filter  = if(isFALSE(snr)) FALSE else "SNR"
+  }
+
+  # PeakMatrixProcessing.adjust_conc is a nested YAML block (enabled toggle
+  # + 5 sample_metadata column names) rather than flat keys, so the study's
+  # own column names never need to be hardcoded in R -- see calculate_conc.R.
+  ac_pars = pmp_params$adjust_conc %||% list()
 
   message("Generating data matrix...")
-  combined_data = generateDataMatrix(
+  combined_data = process_dataset(
     fdata            = fdata,
     metadata         = metadata,
-    lcms_table       = lcms_table,
+    xlsx_path        = xlsx_path,
+    data_source      = data_source,
+    data_tab_names   = data_tab_names %||% "skyline_data",
     datatype         = datatype,
-    tl_headers       = pmp_params$tl_headers,
-    snr              = pmp_params$snr,
+    tl_headers       = tl_headers %||% c("ID", "Name", "Area", "ng/mL", "Response", "S/N"),
+    signal_filter    = signal_filter,
+    snr              = snr,
     blank_filter     = pmp_params$blank_filter,
     replace_MVs      = pmp_params$replace_MVs,
     batch_correction = pmp_params$batch_correction,
@@ -197,7 +255,20 @@ run_MRManalyzeR = function(path_yaml){
     blank_head       = pmp_params$blank_head,
     blank_name       = pmp_params$blank_name,
     normalize        = pmp_params$normalize,
-    adjust_conc      = pmp_params$adjust_conc
+    adjust_conc      = isTRUE(ac_pars$enabled),
+    starting_vol_col = ac_pars$starting_vol_col %||% FALSE,
+    sample_vol_col   = ac_pars$sample_vol_col   %||% "sample_volume_uL",
+    cal_vol_col      = ac_pars$cal_vol_col      %||% "cal_vol_uL",
+    sample_IS_col    = ac_pars$sample_IS_col    %||% "sample_IS_vol_uL",
+    cal_IS_col       = ac_pars$cal_IS_col       %||% "cal_IS_vol_uL",
+    name_col            = name_col,
+    include_col         = include_col,
+    include_value       = include_value,
+    compound_col        = compound_col,
+    processing_name_col = processing_name_col,
+    report_col          = report_col,
+    report_value        = report_value,
+    comment_col         = comment_col
   )
 
   combined_datamatrices = combined_data[[1]]
@@ -206,6 +277,17 @@ run_MRManalyzeR = function(path_yaml){
   scale_fac = pmp_params$scale_fac %||% 1
   combined_datamatrices$data = combined_datamatrices$data * scale_fac
 
+  # Per-feature CV metrics (QC, sample, sample/QC ratio) -> variable_meta,
+  # matched to features by Compound. Uses the data_quality_report QC/sample
+  # labels (defaults if that block is absent).
+  dq_cv = project_params$project$data_quality_report %||%
+            project_params$project$UVA_report %||% list()
+  combined_datamatrices = .add_cv_metrics(
+    combined_datamatrices,
+    sample_type_head = dq_cv$sample_type_head %||% "Sample_type",
+    qc_label         = dq_cv$qc_label         %||% "QC",
+    sample_labels    = dq_cv$sample_labels    %||% "Sample")
+
   add_info = data.frame(sheet = "matrix", info = "units",
                         value = pmp_params$units %||% datatype)
 
@@ -213,7 +295,7 @@ run_MRManalyzeR = function(path_yaml){
   saveRDS(combined_datamatrices, file = out_RDS)
 
   con = file(out_pars, open = "wt"); on.exit(close(con), add = TRUE)
-  utils::capture.output(print(project_params), file = con)
+  utils::capture.output(project_params, file = con)
 
   message("Wrote: ", out_xlsx)
   message("Wrote: ", out_RDS)
@@ -277,7 +359,7 @@ run_MRManalyzeR = function(path_yaml){
     }
 
     # Parent on the package namespace so the Rmd can find package
-    # functions (run_pca_pipeline, de_subset, ...) even when the caller
+    # functions (run_pca, subset_dataset, ...) even when the caller
     # invoked us via `MRManalyzeR::run_MRManalyzeR()` without
     # `library(MRManalyzeR)`. Lookup chain: chunk env -> render env ->
     # MRManalyzeR namespace -> imports -> base.
@@ -289,7 +371,7 @@ run_MRManalyzeR = function(path_yaml){
     env$pmp_params            = pmp_params
     env$report_pars           = params_block
     env$include_MVA           = isTRUE(params_block$include_MVA) ||
-                                 isTRUE(params_block$pca$include)
+                                 isTRUE(params_block$pca$enabled)
     env$out_RDS               = out_RDS
     env$combined_datamatrices = combined_datamatrices
     env$removed_features      = removed_features
@@ -330,9 +412,9 @@ run_MRManalyzeR = function(path_yaml){
 #'
 #' Outputs:
 #' \itemize{
-#'   \item `<output_stub>.RDS`        — merged `DatasetExperiment`
-#'   \item `<output_stub>.xlsx`       — feature_metadata / sample_metadata / matrix tabs
-#'   \item `<output_stub>_stats.xlsx` — stats / correlations / linear_models
+#'   \item `<output_stub>.RDS`        - merged `DatasetExperiment`
+#'   \item `<output_stub>.xlsx`       - feature_metadata / sample_metadata / matrix tabs
+#'   \item `<output_stub>_stats.xlsx` - stats / correlations / linear_models
 #'   \item `<output_stub>_stats_report.html`
 #' }
 #'
@@ -361,11 +443,36 @@ run_MRManalyzeR = function(path_yaml){
 #' @param path_yaml Full path to the combine YAML.
 #' @return Invisibly, a list with the merged `DatasetExperiment`, the
 #'   `stats_tables`, and the output paths.
+#' @examples
+#' # Two tiny processed panels (normally .RDS/.xlsx outputs of
+#' # run_MRManalyzeR()) that share sample IDs, merged via a combine YAML.
+#' # stats_report execute = FALSE keeps the example to the merge itself.
+#' dir <- tempfile("combine_"); dir.create(dir)
+#' mk <- function(feats) struct::DatasetExperiment(
+#'   data          = as.data.frame(matrix(1, 3, length(feats),
+#'                     dimnames = list(c("S1", "S2", "S3"), feats))),
+#'   sample_meta   = data.frame(Sample_ID = c("S1", "S2", "S3"),
+#'                     Sample_type = "Sample",
+#'                     row.names = c("S1", "S2", "S3")),
+#'   variable_meta = data.frame(Compound = feats, Class = "lipid",
+#'                     row.names = feats))
+#' p1 <- file.path(dir, "panelA.RDS"); saveRDS(mk(c("A", "B")), p1)
+#' p2 <- file.path(dir, "panelB.RDS"); saveRDS(mk(c("C", "D")), p2)
+#' cfg <- list(
+#'   combine = list(
+#'     datasets        = list(list(path = p1, tag = "A"),
+#'                            list(path = p2, tag = "B")),
+#'     prefix_features = TRUE,
+#'     sample_id_col   = "Sample_ID",
+#'     output_stub     = file.path(dir, "combined")),
+#'   stats_report = list(execute = FALSE))
+#' yml <- file.path(dir, "combine.yml"); yaml::write_yaml(cfg, yml)
+#' run_MRManalyzeR_combine(yml)
 #' @export
 run_MRManalyzeR_combine = function(path_yaml){
 
   stopifnot(file.exists(path_yaml))
-  cfg = load_yaml(path_yaml)
+  cfg = load_config(path_yaml)
 
   # Tolerate either a flat top-level layout or a `project:` wrapper.
   root = cfg$project %||% cfg
@@ -380,7 +487,7 @@ run_MRManalyzeR_combine = function(path_yaml){
   tags  = vapply(ds, function(d) d$tag %||% NA_character_, character(1))
   if(all(!is.na(tags) & nzchar(tags))) names(paths) = tags
 
-  # Per-dataset config maps — keyed by tag if available, otherwise by path.
+  # Per-dataset config maps - keyed by tag if available, otherwise by path.
   key_for = function(i) if(!is.na(tags[i]) && nzchar(tags[i])) tags[i] else paths[i]
   build_map = function(field){
     out = list()
@@ -409,7 +516,7 @@ run_MRManalyzeR_combine = function(path_yaml){
     prefix_features     = combine_params$prefix_features %||% FALSE,
     combined_name       = combine_params$combined_name   %||% basename(output_stub)
   )
-  message(sprintf("[combine] Result: %d samples × %d features.",
+  message(sprintf("[combine] Result: %d samples x %d features.",
                   nrow(combined$data), ncol(combined$data)))
 
   out_xlsx       = paste0(output_stub, ".xlsx")
@@ -427,18 +534,22 @@ run_MRManalyzeR_combine = function(path_yaml){
                      add_info          = add_info)
   saveRDS(combined, file = out_RDS)
   con = file(out_pars, open = "wt"); on.exit(close(con), add = TRUE)
-  utils::capture.output(print(cfg), file = con)
+  utils::capture.output(cfg, file = con)
   message("Wrote: ", out_xlsx)
   message("Wrote: ", out_RDS)
 
   stats_tables = NULL
-  if(isTRUE(st_params$execute) &&
-     (length(st_params$comparisons) || length(st_params$correlations) ||
-        length(st_params$linear_models))){
-    message("[combine] Running statistics on merged data ...")
-    stats_tables = run_stats(combined, st_params)
-    append_stats_xlsx(out_stats_xlsx, stats_tables)
-    message("Wrote stats to: ", out_stats_xlsx)
+  if(isTRUE(st_params$execute)){
+    has_stats =
+      length(.section_entries(st_params$comparisons,   "comparisons"))   > 0 ||
+      length(.section_entries(st_params$correlations,  "correlations"))  > 0 ||
+      length(.section_entries(st_params$linear_models, "linear_models")) > 0
+    if(has_stats){
+      message("[combine] Running statistics on merged data ...")
+      stats_tables = run_stats(combined, st_params)
+      append_stats_xlsx(out_stats_xlsx, stats_tables)
+      message("Wrote stats to: ", out_stats_xlsx)
+    }
   }
 
   if(isTRUE(st_params$execute)){

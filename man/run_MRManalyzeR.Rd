@@ -20,7 +20,7 @@ Single entry point that:
 \itemize{
   \item loads a project YAML,
   \item (optionally) reads the TargetLynx xlsx workbook and builds the
-    processed peak matrix — gated by `PeakMatrixProcessing.execute`,
+    processed peak matrix - gated by `PeakMatrixProcessing.execute`,
   \item writes the processed matrix to xlsx + RDS and persists the YAML
     parameters alongside,
   \item runs the statistical analyses defined under `stats_report:`
@@ -41,4 +41,9 @@ Backwards compatibility:
   \item Legacy `UVA_report:` / `MVA_report:` blocks are recognised when
     `data_quality_report:` / `stats_report:` are missing.
 }
+}
+\examples{
+# run_example() writes a config for the bundled dataset and drives
+# run_MRManalyzeR(); render = FALSE keeps it to the peak-matrix build.
+run_example(render = FALSE, open = FALSE)
 }

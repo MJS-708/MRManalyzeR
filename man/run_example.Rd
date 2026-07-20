@@ -6,7 +6,8 @@
 \usage{
 run_example(
   results_dir = tempfile("MRManalyzeR_example_"),
-  open = interactive()
+  open = interactive(),
+  render = TRUE
 )
 }
 \arguments{
@@ -15,6 +16,10 @@ to. Defaults to a fresh `tempdir()` so repeated calls do not collide.}
 
 \item{open}{Logical. Open the HTML reports in the browser / RStudio
 viewer after rendering? Default `TRUE` in interactive sessions.}
+
+\item{render}{Logical. Render the HTML reports? Default `TRUE`. Set
+`FALSE` to build the peak matrix + xlsx/RDS outputs only (no pandoc) -
+a quick smoke test of the processing pipeline.}
 }
 \value{
 Invisibly, the list returned by [`run_MRManalyzeR()`]; the
@@ -30,8 +35,7 @@ directory + the bundled xlsx, and calls [`run_MRManalyzeR()`]. After the
 run the generated HTML reports are opened in interactive sessions.
 }
 \examples{
-\dontrun{
-  res <- MRManalyzeR::run_example()
-  attr(res, "results_dir")   # where the xlsx + html landed
-}
+# Light run: build the peak matrix + outputs, skip HTML report rendering.
+res <- run_example(render = FALSE, open = FALSE)
+attr(res, "results_dir")   # where the xlsx + rds landed
 }

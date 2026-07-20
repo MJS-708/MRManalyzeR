@@ -2,11 +2,11 @@
 #'
 #' Adds (or overwrites) the following tabs in the existing results xlsx:
 #' \itemize{
-#'   \item `stats`         — long table of comparisons + post-hoc.
-#'   \item `correlations`  — long table of feature × feature correlations.
-#'   \item `linear_models` — long table of `lm()` coefficients.
-#'   \item `cor_<name>_<subset>_<method>` — one wide correlation matrix tab
-#'         per (correlation × subset × method). Sheet names are sanitised
+#'   \item `stats`         - long table of comparisons + post-hoc.
+#'   \item `correlations`  - long table of feature x feature correlations.
+#'   \item `linear_models` - long table of `lm()` coefficients.
+#'   \item `cor_<name>_<subset>_<method>` - one wide correlation matrix tab
+#'         per (correlation x subset x method). Sheet names are sanitised
 #'         and truncated to 31 characters (Excel limit).
 #' }
 #' If the workbook does not exist (e.g. results dir was cleaned), a new one
@@ -14,9 +14,9 @@
 #'
 #' @param out_xlsx Path to the results xlsx (from `run_MRManalyzeR()`).
 #' @param stats_tables A list with elements `stats`, `correlations`,
-#'   `linear_models` — as returned by [`run_stats()`].
+#'   `linear_models` - as returned by [`run_stats()`].
 #' @return Invisibly, the path written.
-#' @export
+#' @keywords internal
 append_stats_xlsx = function(out_xlsx, stats_tables){
 
   if(file.exists(out_xlsx)){
@@ -48,7 +48,7 @@ append_stats_xlsx = function(out_xlsx, stats_tables){
     }
   }
 
-  # 2. Wide-matrix tabs for correlations (one per subset × method × correlation)
+  # 2. Wide-matrix tabs for correlations (one per subset x method x correlation)
   if(!is.null(stats_tables$correlations) && nrow(stats_tables$correlations) > 0){
     .write_corr_matrix_tabs(wb, stats_tables$correlations)
   }
@@ -70,7 +70,7 @@ append_stats_xlsx = function(out_xlsx, stats_tables){
                       colNames = TRUE, rowNames = FALSE, keepNA = FALSE)
 }
 
-#' Write one wide correlation matrix per (correlation × subset × method)
+#' Write one wide correlation matrix per (correlation x subset x method)
 #' @keywords internal
 #' @noRd
 .write_corr_matrix_tabs = function(wb, corr_long){

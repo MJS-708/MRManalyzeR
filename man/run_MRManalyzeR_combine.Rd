@@ -26,9 +26,9 @@ of column names across inputs (specify them only to *narrow* the set).
 
 Outputs:
 \itemize{
-  \item `<output_stub>.RDS`        — merged `DatasetExperiment`
-  \item `<output_stub>.xlsx`       — feature_metadata / sample_metadata / matrix tabs
-  \item `<output_stub>_stats.xlsx` — stats / correlations / linear_models
+  \item `<output_stub>.RDS`        - merged `DatasetExperiment`
+  \item `<output_stub>.xlsx`       - feature_metadata / sample_metadata / matrix tabs
+  \item `<output_stub>_stats.xlsx` - stats / correlations / linear_models
   \item `<output_stub>_stats_report.html`
 }
 
@@ -53,4 +53,30 @@ stats_report:
   correlations:  [...]
   linear_models: [...]
 }
+}
+\examples{
+# Two tiny processed panels (normally .RDS/.xlsx outputs of
+# run_MRManalyzeR()) that share sample IDs, merged via a combine YAML.
+# stats_report execute = FALSE keeps the example to the merge itself.
+dir <- tempfile("combine_"); dir.create(dir)
+mk <- function(feats) struct::DatasetExperiment(
+  data          = as.data.frame(matrix(1, 3, length(feats),
+                    dimnames = list(c("S1", "S2", "S3"), feats))),
+  sample_meta   = data.frame(Sample_ID = c("S1", "S2", "S3"),
+                    Sample_type = "Sample",
+                    row.names = c("S1", "S2", "S3")),
+  variable_meta = data.frame(Compound = feats, Class = "lipid",
+                    row.names = feats))
+p1 <- file.path(dir, "panelA.RDS"); saveRDS(mk(c("A", "B")), p1)
+p2 <- file.path(dir, "panelB.RDS"); saveRDS(mk(c("C", "D")), p2)
+cfg <- list(
+  combine = list(
+    datasets        = list(list(path = p1, tag = "A"),
+                           list(path = p2, tag = "B")),
+    prefix_features = TRUE,
+    sample_id_col   = "Sample_ID",
+    output_stub     = file.path(dir, "combined")),
+  stats_report = list(execute = FALSE))
+yml <- file.path(dir, "combine.yml"); yaml::write_yaml(cfg, yml)
+run_MRManalyzeR_combine(yml)
 }
