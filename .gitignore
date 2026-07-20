@@ -55,3 +55,9 @@ temp_res/
 # RStudio Connect folder
 rsconnect/
 combine_data_helpers.R
+inst/doc
+
+# BiocCheck output folder (regenerated each run)
+MRManalyzeR.BiocCheck/
+/doc/
+/Meta/

@@ -1,23 +1,26 @@
 Package: MRManalyzeR
 Type: Package
-Title: Process and Analyse Targeted LC-MS Lipidomics & Metabolomics Data
-Version: 0.2.0
-Authors@R: person("Matthew", "J Smith",
+Title: Process and Analyse Targeted LC-MS Lipidomics and Metabolomics Data
+Version: 0.99.0
+Authors@R: person("Matthew J.", "Smith",
                   email = "mattyjsmith123@gmail.com",
-                  role = c("aut", "cre"))
+                  role = c("aut", "cre"),
+                  comment = c(ORCID = "0000-0002-7357-2670"))
 Description: End-to-end processing pipeline for targeted lipidomics and
     metabolomics data exported from Waters TargetLynx. Reads xlsx workbooks,
     builds a peak-area / concentration matrix with optional SNR filtering,
     blank filtering, missing-value imputation, normalisation, concentration
     adjustment, and batch correction, then renders self-contained HTML data
     quality and statistical reports. Driven from a single YAML config via
-    `run_MRManalyzeR()`.
-License: file LICENSE
+    run_MRManalyzeR().
+License: MIT + file LICENSE
 Encoding: UTF-8
-LazyData: true
-RoxygenNote: 7.3.3
+biocViews: Metabolomics, Lipidomics, MassSpectrometry, QualityControl,
+    Normalization, BatchEffect, Visualization
+URL: https://github.com/MJS-708/MRManalyzeR
+BugReports: https://github.com/MJS-708/MRManalyzeR/issues
 Depends:
-    R (>= 4.0),
+    R (>= 4.5.0),
     struct
 Imports:
     magrittr,
@@ -27,19 +30,22 @@ Imports:
     yaml,
     openxlsx,
     janitor,
+    rmarkdown,
+    methods
+Suggests:
     ggplot2,
     ggrepel,
-    structToolbox,
-    pmp,
-    rmarkdown,
-    knitr,
-    htmltools,
+    plotly,
     DT,
-    plotly
-Suggests:
+    htmltools,
+    knitr,
     cowplot,
     gridExtra,
     pheatmap,
     RColorBrewer,
-    testthat (>= 3.0.0)
+    BiocStyle,
+    testthat (>= 3.0.0),
+    withr
+VignetteBuilder: knitr
 Config/testthat/edition: 3
+Config/roxygen2/version: 8.0.0

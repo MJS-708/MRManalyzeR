@@ -1,0 +1,204 @@
+---
+title: "Processing targeted LC-MS lipidomics and metabolomics with MRManalyzeR"
+author: "Matthew J. Smith"
+date: "`r Sys.Date()`"
+package: MRManalyzeR
+output:
+  BiocStyle::html_document:
+    toc_float: true
+vignette: >
+  %\VignetteIndexEntry{Processing targeted LC-MS lipidomics and metabolomics with MRManalyzeR}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup-knitr, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+```
+
+# Overview
+
+MRManalyzeR processes and analyses targeted lipidomics and metabolomics data
+exported from Waters TargetLynx (or Skyline). The processing pipeline is a
+sequence of small, composable step functions -- read the workbook, filter,
+adjust, impute, assemble, batch-correct -- followed by the statistical
+analyses. The single entry point `run_MRManalyzeR()` drives the whole thing
+from one YAML config, but every step is a public function you can call on its
+own. This vignette walks through each step, then shows the one-YAML shortcut.
+
+```{r load}
+library(MRManalyzeR)
+```
+
+# The pipeline, step by step
+
+## 1. Read the workbook
+
+`read_targetlynx()` (TargetLynx) and `read_skyline()` (Skyline) both return a
+wide *sample x compound* matrix, optionally masking values below a
+signal-to-noise (`snr`) or LOD/LOQ threshold. Here we read the bundled
+oxylipin example workbook:
+
+```{r read}
+xlsx <- system.file("extdata", "example_data.xlsx", package = "MRManalyzeR")
+m <- read_targetlynx(xlsx, datatype = "Area", snr = 3)
+m[1:4, 1:4]
+```
+
+## 2. Blank filter
+
+`filter_blanks()` sets any value below `mean(blank) * blank_filter` to `NA`:
+
+```{r filter-blanks}
+demo <- data.frame(PGE2 = c(100, 90, 5), PGD2 = c(50, 60, 1),
+                   row.names = c("S1", "S2", "Blank1"))
+filter_blanks(demo, blank_samples = "Blank1", blank_filter = 3)
+```
+
+## 3. Normalise
+
+`normalise_matrix()` divides each sample by a known per-sample amount (protein,
+tissue weight, ...), matched by name:
+
+```{r normalise}
+m2 <- data.frame(PGE2 = c(10, 20), PGD2 = c(30, 40), row.names = c("S1", "S2"))
+sm <- data.frame(Name = c("S1", "S2"), protein_ug = c(2, 4))
+normalise_matrix(m2, sm, column = "protein_ug")
+```
+
+## 4. Concentration adjustment
+
+`adjust_concentration()` applies the vial-level calibration correction
+(volumes + internal standard) and, optionally, a starting-volume correction:
+
+```{r adjust-conc}
+sv <- data.frame(Name = c("S1", "S2"),
+                 sample_volume_uL = c(100, 100), cal_vol_uL = c(100, 100),
+                 sample_IS_vol_uL = c(10, 10),   cal_IS_vol_uL = c(10, 10))
+adjust_concentration(m2, sv)
+```
+
+## 5. Impute missing values
+
+`impute_missing()` replaces `NA`s with a fraction of the per-feature minimum:
+
+```{r impute}
+mv <- data.frame(PGE2 = c(10, 5, NA), PGD2 = c(2, NA, 4),
+                 row.names = c("S1", "S2", "S3"))
+impute_missing(mv, blank_samples = character(0), scalar = 0.5)
+```
+
+## 6. Assemble a DatasetExperiment
+
+`assemble_dataset()` aligns the matrix with the feature and sample metadata
+into a `struct::DatasetExperiment`, the object the rest of the package works on:
+
+```{r assemble}
+fm <- data.frame(Compound = c("PGE2", "PGD2"), Report = "YES",
+                 row.names = c("PGE2", "PGD2"))
+smeta <- data.frame(Name = c("S1", "S2"), Group = c("ctrl", "trt"),
+                    row.names = c("S1", "S2"))
+de <- assemble_dataset(m2, fm, smeta)
+de
+```
+
+## 7. Batch correction
+
+`correct_batch()` scales each batch so its per-feature median matches the grand
+median across the reference samples:
+
+```{r batch, message = FALSE, warning = FALSE}
+bm  <- data.frame(PGE2 = c(10, 12, 20, 24), PGD2 = c(5, 6, 10, 12),
+                  row.names = c("S1", "S2", "S3", "S4"))
+bfm <- data.frame(Compound = c("PGE2", "PGD2"), row.names = c("PGE2", "PGD2"))
+bsm <- data.frame(Sample_type = "Sample", Chrom_Batch = c("b1", "b1", "b2", "b2"),
+                  row.names = c("S1", "S2", "S3", "S4"))
+bde <- struct::DatasetExperiment(data = bm, sample_meta = bsm, variable_meta = bfm)
+correct_batch(bde, qc_label = "Sample", factor_name = "Sample_type",
+              batch_head = "Chrom_Batch")
+```
+
+## 8. Statistics
+
+`run_stats()` runs the comparisons, correlations and linear models described by
+a `stats_report:` parameter list and returns tidy tables:
+
+```{r stats, message = FALSE, warning = FALSE}
+sde <- struct::DatasetExperiment(
+  data = data.frame(PGE2 = c(10, 12, 11, 20, 24, 22),
+                    PGD2 = c(5, 6, 5, 11, 13, 12), row.names = paste0("S", 1:6)),
+  sample_meta = data.frame(Sample_ID = paste0("S", 1:6),
+                           Group = rep(c("ctrl", "trt"), each = 3),
+                           row.names = paste0("S", 1:6)),
+  variable_meta = data.frame(Compound = c("PGE2", "PGD2"),
+                             row.names = c("PGE2", "PGD2")))
+params <- list(comparisons = list(enabled = TRUE, entries = list(
+  list(name = "ctrl_vs_trt",
+       compare = list(factor = "Group", levels = c("ctrl", "trt"))))))
+run_stats(sde, params)$stats
+```
+
+## 9. PCA
+
+`run_pca()` pre-processes a matrix (missing-value handling, transform, scaling)
+and runs `prcomp()`, returning the fit plus a trace of the steps applied:
+
+```{r pca}
+X <- matrix(abs(rnorm(60, 100, 20)), nrow = 12,
+            dimnames = list(paste0("S", 1:12), paste0("F", 1:5)))
+res <- run_pca(X, transform = "log2")
+res$steps
+```
+
+# Composing the pipeline
+
+`process_dataset()` wires the read + per-batch (filter / normalise /
+concentration / impute) + assemble + batch-correct steps together, driven by the
+feature and sample metadata:
+
+```{r process, eval = FALSE}
+fdata <- openxlsx::read.xlsx(xlsx, sheet = "feature_metadata")
+meta  <- openxlsx::read.xlsx(xlsx, sheet = "sample_metadata")
+out <- process_dataset(fdata, meta, xlsx_path = xlsx,
+                       data_source = "targetlynx", datatype = "Area",
+                       snr = 3, blank_filter = FALSE, bc_header = "Chrom_Batch")
+out[[1]]   # the processed DatasetExperiment
+```
+
+`run_example()` runs that whole pipeline on the bundled dataset and writes the
+outputs. With `render = FALSE` it builds the matrix without rendering the (slower)
+HTML reports:
+
+```{r run-example, message = FALSE}
+res <- run_example(render = FALSE, open = FALSE)
+list.files(attr(res, "results_dir"))
+```
+
+# Driving it from a YAML config
+
+In practice the entire run -- data source, every processing step, the QC and
+statistics reports -- is described by a single YAML file, and you call one
+function. The bundled reference config is:
+
+```{r config-path}
+system.file("extdata", "example_config.yml", package = "MRManalyzeR")
+```
+
+Its top-level blocks are `paths`, `PeakMatrixProcessing` (data source + each
+processing step), `data_quality_report`, and `stats_report`. Copy it, edit it
+for your study, and run:
+
+```{r run-yaml, eval = FALSE}
+run_MRManalyzeR("path/to/your_config.yml")
+```
+
+Outputs (the processed matrix as `.xlsx` + `.RDS`, a `_stats.xlsx`, and two
+self-contained HTML reports) are written next to your data.
+`run_MRManalyzeR_combine()` is the equivalent entry point for merging several
+acquisition panels into one analysis.
+
+# Session info
+
+```{r session-info}
+sessionInfo()
+```
