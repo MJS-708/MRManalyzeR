@@ -6,17 +6,19 @@ Authors@R: person("Matthew J.", "Smith",
                   email = "mattyjsmith123@gmail.com",
                   role = c("aut", "cre"),
                   comment = c(ORCID = "0000-0002-7357-2670"))
-Description: End-to-end processing pipeline for targeted lipidomics and
-    metabolomics data exported from Waters TargetLynx. Reads xlsx workbooks,
-    builds a peak-area / concentration matrix with optional SNR filtering,
-    blank filtering, missing-value imputation, normalisation, concentration
-    adjustment, and batch correction, then renders self-contained HTML data
-    quality and statistical reports. Driven from a single YAML config via
-    run_MRManalyzeR().
+Description: End-to-end processing workflow for targeted lipidomics and
+    metabolomics data exported from Waters TargetLynx or from Skyline. Reads
+    xlsx workbooks, builds a peak-area / concentration matrix with optional
+    signal filtering (SNR, LOD or LOQ), blank filtering, normalisation,
+    calibration and internal-standard concentration adjustment, missing-value
+    imputation, and batch correction, then renders self-contained HTML data
+    quality and statistical reports. Each step is an exported function acting
+    on a DatasetExperiment, and a whole run can be driven from a single YAML
+    config via run_MRManalyzeR().
 License: MIT + file LICENSE
 Encoding: UTF-8
 biocViews: Metabolomics, Lipidomics, MassSpectrometry, QualityControl,
-    Normalization, BatchEffect, Visualization
+    Normalization, BatchEffect, Visualization, WorkflowStep
 URL: https://github.com/MJS-708/MRManalyzeR
 BugReports: https://github.com/MJS-708/MRManalyzeR/issues
 Depends:

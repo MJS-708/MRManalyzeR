@@ -5,12 +5,13 @@
 #' concentration adjustment and batch correction to produce a
 #' `struct::DatasetExperiment`.
 #'
-#' The peak-matrix pipeline behind [run_MRManalyzeR()], composed of the public
+#' The peak-matrix workflow behind [run_MRManalyzeR()], composed of the public
 #' step functions: it reads the workbook ([read_targetlynx()] /
-#' [read_skyline()]) into a wide sample x compound matrix, then per batch
-#' applies [filter_blanks()], [normalise_matrix()], [adjust_concentration()]
-#' and [impute_missing()], assembles a `struct::DatasetExperiment`
-#' ([assemble_dataset()]) and optionally batch-corrects it ([correct_batch()]).
+#' [read_skyline()]) into a wide sample x compound matrix, assembles that into a
+#' `struct::DatasetExperiment` ([assemble_dataset()]), then applies
+#' [filter_blanks()], [normalise_matrix()], [adjust_concentration()] and
+#' [impute_missing()] to the dataset per acquisition batch, and optionally
+#' batch-corrects the result ([correct_batch()]).
 #'
 #' @param fdata Feature metadata. Must contain the columns named by
 #'   `compound_col`, `processing_name_col`, `report_col` (defaults
@@ -81,6 +82,8 @@
 #'                        blank_filter = FALSE, bc_header = "Chrom_Batch",
 #'                        blank_head = "Sample_type")
 #' out[[1]]
+#' @family workflow steps
+#' @seealso [run_MRManalyzeR()] to drive the whole workflow from a YAML config.
 #' @export
 process_dataset = function(fdata,
                               metadata,
@@ -244,22 +247,31 @@ process_dataset = function(fdata,
       paste(colnames(meta_yes), collapse = ", ")))
   }
 
+  # --- Assemble the DatasetExperiment, then process it --------------------
+  # The DE is built first so every processing step downstream operates on the
+  # dataset object (data + sample_meta together) rather than a bare matrix.
+  if(nrow(out_table) == 0 || ncol(out_table) == 0){
+    stop(sprintf(
+      "[process_dataset] Empty matrix after reading (%d samples x %d features). Check: bc_header column, blank/signal filters, and that the source data actually contains data for the included samples.",
+      nrow(out_table), ncol(out_table)))
+  }
+  lcms_experiment = assemble_dataset(out_table, fdata, metadata, name_col = name_col)
+
   # Treat NA / "" bc_header values (e.g. blanks, QCs that weren't
   # cryosectioned) as a single "_unbatched_" group so they survive the
   # per-batch split instead of being silently dropped via `NA == "x"`.
-  bc_vec = as.character(meta_yes[[bc_header]])
+  # Computed locally: the dataset's own sample_meta keeps the original values.
+  bc_vec = as.character(as.data.frame(lcms_experiment$sample_meta)[[bc_header]])
   bc_vec[is.na(bc_vec) | !nzchar(bc_vec)] = "_unbatched_"
-  meta_yes[[bc_header]] = bc_vec
   batches = unique(bc_vec)
 
   if(length(batches) == 1L){
-    # fast-path: skip the rebind
-    out_matrix = .process_batch(
-      out_table_batch = out_table[rownames(out_table) %in% meta_yes[[name_col]], , drop = FALSE],
-      metadata_batch  = meta_yes,
-      blank_head      = blank_head,
-      blank_name      = blank_name,
-      blank_filter    = blank_filter,
+    # fast-path: process the whole dataset, no split/rebind
+    lcms_experiment = .process_batch(
+      lcms_experiment,
+      blank_head       = blank_head,
+      blank_name       = blank_name,
+      blank_filter     = blank_filter,
       normalize        = normalize,
       adjust_conc      = adjust_conc,
       starting_vol_col = starting_vol_col,
@@ -267,19 +279,16 @@ process_dataset = function(fdata,
       cal_vol_col      = cal_vol_col,
       sample_IS_col    = sample_IS_col,
       cal_IS_col       = cal_IS_col,
-      replace_MVs      = replace_MVs,
-      name_col         = name_col
+      replace_MVs      = replace_MVs
     )
   } else {
-    batch_frames = vector("list", length(batches))
-    for(b_i in seq_along(batches)){
-      metadata_batch = meta_yes[meta_yes[[bc_header]] == batches[b_i], , drop = FALSE]
-      batch_frames[[b_i]] = .process_batch(
-        out_table_batch = out_table[rownames(out_table) %in% metadata_batch[[name_col]], , drop = FALSE],
-        metadata_batch  = metadata_batch,
-        blank_head      = blank_head,
-        blank_name      = blank_name,
-        blank_filter    = blank_filter,
+    row_order = rownames(as.data.frame(lcms_experiment$data))
+    batch_frames = lapply(batches, function(b){
+      as.data.frame(.process_batch(
+        .de_rows(lcms_experiment, which(bc_vec == b)),
+        blank_head       = blank_head,
+        blank_name       = blank_name,
+        blank_filter     = blank_filter,
         normalize        = normalize,
         adjust_conc      = adjust_conc,
         starting_vol_col = starting_vol_col,
@@ -287,20 +296,12 @@ process_dataset = function(fdata,
         cal_vol_col      = cal_vol_col,
         sample_IS_col    = sample_IS_col,
         cal_IS_col       = cal_IS_col,
-        replace_MVs      = replace_MVs,
-        name_col         = name_col
-      )
-    }
-    out_matrix = dplyr::bind_rows(batch_frames)
+        replace_MVs      = replace_MVs
+      )$data)
+    })
+    merged = do.call(rbind, batch_frames)
+    lcms_experiment$data = merged[row_order, , drop = FALSE]
   }
-
-  # --- Assemble DatasetExperiment ----------------------------------------
-  if(nrow(out_matrix) == 0 || ncol(out_matrix) == 0){
-    stop(sprintf(
-      "[process_dataset] Empty matrix after processing (%d samples x %d features). Check: bc_header column, blank/signal filters, and that the source data actually contains data for the included samples.",
-      nrow(out_matrix), ncol(out_matrix)))
-  }
-  lcms_experiment = assemble_dataset(out_matrix, fdata, metadata, name_col = name_col)
 
   if(isTRUE(batch_correction))
     lcms_experiment = correct_batch(lcms_experiment,
@@ -383,38 +384,49 @@ process_dataset = function(fdata,
   out_table
 }
 
-#' Run blank-filter / normalise / concentration / MV-replace on one batch
+#' Run blank-filter / normalise / concentration / MV-impute on one batch
+#'
+#' Operates on a `DatasetExperiment` so each step reads what it needs
+#' (blank rows, divisors, volumes) straight from `sample_meta`.
 #' @keywords internal
 #' @noRd
-.process_batch = function(out_table_batch, metadata_batch,
-                          blank_head, blank_name,
+.process_batch = function(de, blank_head, blank_name,
                           blank_filter, normalize,
                           adjust_conc, starting_vol_col,
                           sample_vol_col, cal_vol_col, sample_IS_col, cal_IS_col,
-                          replace_MVs, name_col = "Name"){
-
-  blank_samples = metadata_batch[[name_col]][metadata_batch[[blank_head]] == blank_name]
+                          replace_MVs){
 
   if(!isFALSE(blank_filter))
-    out_table_batch = filter_blanks(out_table_batch, blank_samples, blank_filter)
+    de = filter_blanks(de, blank_filter = blank_filter,
+                       blank_head = blank_head, blank_name = blank_name)
 
   if(!isFALSE(normalize))
-    out_table_batch = normalise_matrix(out_table_batch, metadata_batch,
-                                       column = normalize, name_col = name_col)
+    de = normalise_matrix(de, column = normalize)
 
-  # adjust_conc: vial-level concentration correction (+ optional starting-volume
+  # Vial-level concentration correction (+ optional starting-volume
   # correction) -- see adjust_concentration.R.
   if(isTRUE(adjust_conc))
-    out_table_batch = adjust_concentration(out_table_batch, metadata_batch,
-                                           sample_vol_col   = sample_vol_col,
-                                           cal_vol_col      = cal_vol_col,
-                                           sample_IS_col    = sample_IS_col,
-                                           cal_IS_col       = cal_IS_col,
-                                           starting_vol_col = starting_vol_col,
-                                           name_col         = name_col)
+    de = adjust_concentration(de,
+                              sample_vol_col   = sample_vol_col,
+                              cal_vol_col      = cal_vol_col,
+                              sample_IS_col    = sample_IS_col,
+                              cal_IS_col       = cal_IS_col,
+                              starting_vol_col = starting_vol_col)
 
   if(!isFALSE(replace_MVs))
-    out_table_batch = impute_missing(out_table_batch, blank_samples, scalar = replace_MVs)
+    de = impute_missing(de, scalar = replace_MVs,
+                        blank_head = blank_head, blank_name = blank_name)
 
-  out_table_batch
+  de
+}
+
+#' Subset a DatasetExperiment to the given sample rows, keeping all features
+#' @keywords internal
+#' @noRd
+.de_rows = function(de, idx){
+  struct::DatasetExperiment(
+    data          = as.data.frame(de$data)[idx, , drop = FALSE],
+    sample_meta   = as.data.frame(de$sample_meta)[idx, , drop = FALSE],
+    variable_meta = as.data.frame(de$variable_meta)
+  )
 }

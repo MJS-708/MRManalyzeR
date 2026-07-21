@@ -14,6 +14,15 @@
 #'     `stats_report` HTML vignettes.
 #' }
 #'
+#' Per-compound quality metrics are written into the returned dataset's
+#' `variable_meta`, matched to the feature they describe: `CV_QC` (coefficient
+#' of variation across the pooled QC injections - technical variability, and
+#' the usual quantification filter), `CV_sample` (the same across the
+#' biological samples, so biological spread plus that technical noise), and
+#' `CV_sample_vs_QC`. A ratio near 1 flags a compound varying no more between
+#' samples than between replicate injections of identical material. `CV_QC` is
+#' `NA` when a run contains no QC injections.
+#'
 #' Output filenames are derived from `paths.fn` + `paths.datatype` +
 #' `paths.suffix`, so when `PeakMatrixProcessing.execute: False` the code
 #' can still locate the existing RDS without re-reading the source xlsx.
@@ -34,6 +43,7 @@
 #' # run_example() writes a config for the bundled dataset and drives
 #' # run_MRManalyzeR(); render = FALSE keeps it to the peak-matrix build.
 #' run_example(render = FALSE, open = FALSE)
+#' @family entry points
 #' @export
 run_MRManalyzeR = function(path_yaml){
 
@@ -232,7 +242,7 @@ run_MRManalyzeR = function(path_yaml){
 
   # PeakMatrixProcessing.adjust_conc is a nested YAML block (enabled toggle
   # + 5 sample_metadata column names) rather than flat keys, so the study's
-  # own column names never need to be hardcoded in R -- see calculate_conc.R.
+  # own column names never need to be hardcoded in R -- see adjust_concentration.R.
   ac_pars = pmp_params$adjust_conc %||% list()
 
   message("Generating data matrix...")
@@ -399,7 +409,7 @@ run_MRManalyzeR = function(path_yaml){
 }
 
 
-#' Run the combine-mode pipeline from a dedicated combine YAML
+#' Run the combine-mode workflow from a dedicated combine YAML
 #'
 #' Merges several previously-saved datasets (`.RDS` or `.xlsx` outputs of
 #' [`run_MRManalyzeR()`]) into one `DatasetExperiment`, then runs the
@@ -468,6 +478,7 @@ run_MRManalyzeR = function(path_yaml){
 #'   stats_report = list(execute = FALSE))
 #' yml <- file.path(dir, "combine.yml"); yaml::write_yaml(cfg, yml)
 #' run_MRManalyzeR_combine(yml)
+#' @family entry points
 #' @export
 run_MRManalyzeR_combine = function(path_yaml){
 

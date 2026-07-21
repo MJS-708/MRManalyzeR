@@ -2,7 +2,7 @@
 % Please edit documentation in R/run_MRManalyzeR.R
 \name{run_MRManalyzeR_combine}
 \alias{run_MRManalyzeR_combine}
-\title{Run the combine-mode pipeline from a dedicated combine YAML}
+\title{Run the combine-mode workflow from a dedicated combine YAML}
 \usage{
 run_MRManalyzeR_combine(path_yaml)
 }
@@ -80,3 +80,9 @@ cfg <- list(
 yml <- file.path(dir, "combine.yml"); yaml::write_yaml(cfg, yml)
 run_MRManalyzeR_combine(yml)
 }
+\seealso{
+Other entry points:
+\code{\link[=run_MRManalyzeR]{run_MRManalyzeR()}},
+\code{\link[=run_example]{run_example()}}
+}
+\concept{entry points}

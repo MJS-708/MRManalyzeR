@@ -2,27 +2,53 @@
 % Please edit documentation in R/filter_blanks.R
 \name{filter_blanks}
 \alias{filter_blanks}
-\title{Blank-filter a matrix (mask values below the blank threshold)}
+\title{Blank-filter a dataset (mask values at or below the blank level)}
 \usage{
-filter_blanks(df, blank_samples, blank_filter)
+filter_blanks(
+  de,
+  blank_filter,
+  blank_head = "Sample_type",
+  blank_name = "Blank"
+)
 }
 \arguments{
-\item{df}{Wide numeric matrix / data frame, rows = samples (rownames =
-sample names).}
+\item{de}{A `struct::DatasetExperiment`.}
 
-\item{blank_samples}{Character vector of blank sample names.}
+\item{blank_filter}{Numeric fold-change multiplier applied to the blank mean
+(e.g. `3` keeps only peaks at least three times the blank level).}
 
-\item{blank_filter}{Numeric fold-change multiplier applied to the blank mean.}
+\item{blank_head}{`sample_meta` column identifying blank injections.}
+
+\item{blank_name}{Value in `blank_head` marking a blank injection.}
 }
 \value{
-`df` with sub-threshold values set to `NA`.
+`de` with sub-threshold values in `data` set to `NA`.
 }
 \description{
-For each feature, computes `mean(blank samples) * blank_filter` and sets any
-sample value below that threshold to `NA`.
+For each feature, computes `mean(blank injections) * blank_filter` and sets
+any value below that threshold to `NA`. Blank injections are identified from
+`blank_head` in the dataset's `sample_meta`, so nothing has to be passed
+separately.
 }
 \examples{
-m <- data.frame(A = c(100, 90, 5), B = c(50, 60, 1),
-                row.names = c("S1", "S2", "Blank1"))
-filter_blanks(m, blank_samples = "Blank1", blank_filter = 3)
+de <- struct::DatasetExperiment(
+  data = data.frame(PGE2 = c(100, 90, 5), PGD2 = c(50, 60, 1),
+                    row.names = c("S1", "S2", "B1")),
+  sample_meta = data.frame(Sample_type = c("Sample", "Sample", "Blank"),
+                           row.names = c("S1", "S2", "B1")),
+  variable_meta = data.frame(Compound = c("PGE2", "PGD2"),
+                             row.names = c("PGE2", "PGD2")))
+filter_blanks(de, blank_filter = 3)$data
 }
+\seealso{
+Other workflow steps:
+\code{\link[=adjust_concentration]{adjust_concentration()}},
+\code{\link[=assemble_dataset]{assemble_dataset()}},
+\code{\link[=correct_batch]{correct_batch()}},
+\code{\link[=impute_missing]{impute_missing()}},
+\code{\link[=normalise_matrix]{normalise_matrix()}},
+\code{\link[=process_dataset]{process_dataset()}},
+\code{\link[=read_skyline]{read_skyline()}},
+\code{\link[=read_targetlynx]{read_targetlynx()}}
+}
+\concept{workflow steps}

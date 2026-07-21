@@ -35,3 +35,15 @@ sm <- data.frame(Name = c("S1", "S2", "S3"), Group = c("x", "y", "x"),
                  row.names = c("S1", "S2", "S3"))
 assemble_dataset(m, fm, sm)
 }
+\seealso{
+Other workflow steps:
+\code{\link[=adjust_concentration]{adjust_concentration()}},
+\code{\link[=correct_batch]{correct_batch()}},
+\code{\link[=filter_blanks]{filter_blanks()}},
+\code{\link[=impute_missing]{impute_missing()}},
+\code{\link[=normalise_matrix]{normalise_matrix()}},
+\code{\link[=process_dataset]{process_dataset()}},
+\code{\link[=read_skyline]{read_skyline()}},
+\code{\link[=read_targetlynx]{read_targetlynx()}}
+}
+\concept{workflow steps}

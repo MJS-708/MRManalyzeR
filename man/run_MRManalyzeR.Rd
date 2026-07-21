@@ -31,6 +31,15 @@ Single entry point that:
 }
 }
 \details{
+Per-compound quality metrics are written into the returned dataset's
+`variable_meta`, matched to the feature they describe: `CV_QC` (coefficient
+of variation across the pooled QC injections - technical variability, and
+the usual quantification filter), `CV_sample` (the same across the
+biological samples, so biological spread plus that technical noise), and
+`CV_sample_vs_QC`. A ratio near 1 flags a compound varying no more between
+samples than between replicate injections of identical material. `CV_QC` is
+`NA` when a run contains no QC injections.
+
 Output filenames are derived from `paths.fn` + `paths.datatype` +
 `paths.suffix`, so when `PeakMatrixProcessing.execute: False` the code
 can still locate the existing RDS without re-reading the source xlsx.
@@ -47,3 +56,9 @@ Backwards compatibility:
 # run_MRManalyzeR(); render = FALSE keeps it to the peak-matrix build.
 run_example(render = FALSE, open = FALSE)
 }
+\seealso{
+Other entry points:
+\code{\link[=run_MRManalyzeR_combine]{run_MRManalyzeR_combine()}},
+\code{\link[=run_example]{run_example()}}
+}
+\concept{entry points}

@@ -42,3 +42,9 @@ sm <- data.frame(Sample_ID = c("S1", "S2", "S3"), Group = c("x", "y", "x"),
 de <- struct::DatasetExperiment(data = m, sample_meta = sm, variable_meta = fm)
 subset_dataset(de, conditions = list(Group = "x"))
 }
+\seealso{
+Other analysis steps:
+\code{\link[=run_pca]{run_pca()}},
+\code{\link[=run_stats]{run_stats()}}
+}
+\concept{analysis steps}

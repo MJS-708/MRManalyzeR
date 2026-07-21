@@ -2,30 +2,41 @@
 % Please edit documentation in R/normalise_matrix.R
 \name{normalise_matrix}
 \alias{normalise_matrix}
-\title{Normalise a matrix by a per-sample metadata column}
+\title{Normalise a dataset by a per-sample metadata column}
 \usage{
-normalise_matrix(x, sample_meta, column, name_col = "Name")
+normalise_matrix(de, column)
 }
 \arguments{
-\item{x}{Wide numeric matrix / data frame, rows = samples.}
+\item{de}{A `struct::DatasetExperiment`.}
 
-\item{sample_meta}{Sample metadata containing `column` and `name_col`.}
-
-\item{column}{`sample_meta` column to divide by (e.g. protein amount or
-tissue weight).}
-
-\item{name_col}{`sample_meta` column matching the row names of `x`.}
+\item{column}{`sample_meta` column to divide by.}
 }
 \value{
-`x` with each row divided by its per-sample divisor.
+`de` with each row of `data` divided by its per-sample divisor.
 }
 \description{
-Divides each sample (row) of `x` by that sample's value in
-`sample_meta[[column]]`, matched by name (not row position, since the data
-matrix and metadata row orders are not guaranteed to agree).
+Divides each sample (row) of the dataset by that sample's value in
+`sample_meta[[column]]` -- for example protein content, tissue weight, or
+volume of biofluid -- putting all samples on a per-unit basis.
 }
 \examples{
-m  <- data.frame(A = c(10, 20), B = c(30, 40), row.names = c("S1", "S2"))
-sm <- data.frame(Name = c("S1", "S2"), protein = c(2, 4))
-normalise_matrix(m, sm, column = "protein")
+de <- struct::DatasetExperiment(
+  data = data.frame(PGE2 = c(10, 20), PGD2 = c(30, 40),
+                    row.names = c("S1", "S2")),
+  sample_meta = data.frame(protein_ug = c(2, 4), row.names = c("S1", "S2")),
+  variable_meta = data.frame(Compound = c("PGE2", "PGD2"),
+                             row.names = c("PGE2", "PGD2")))
+normalise_matrix(de, column = "protein_ug")$data
 }
+\seealso{
+Other workflow steps:
+\code{\link[=adjust_concentration]{adjust_concentration()}},
+\code{\link[=assemble_dataset]{assemble_dataset()}},
+\code{\link[=correct_batch]{correct_batch()}},
+\code{\link[=filter_blanks]{filter_blanks()}},
+\code{\link[=impute_missing]{impute_missing()}},
+\code{\link[=process_dataset]{process_dataset()}},
+\code{\link[=read_skyline]{read_skyline()}},
+\code{\link[=read_targetlynx]{read_targetlynx()}}
+}
+\concept{workflow steps}

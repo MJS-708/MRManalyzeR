@@ -2,45 +2,69 @@
 % Please edit documentation in R/adjust_concentration.R
 \name{adjust_concentration}
 \alias{adjust_concentration}
-\title{Adjust a matrix to sample concentrations}
+\title{Adjust a dataset to true sample concentrations}
 \usage{
 adjust_concentration(
-  x,
-  sample_meta,
+  de,
   sample_vol_col = "sample_volume_uL",
   cal_vol_col = "cal_vol_uL",
   sample_IS_col = "sample_IS_vol_uL",
   cal_IS_col = "cal_IS_vol_uL",
-  starting_vol_col = FALSE,
-  name_col = "Name"
+  starting_vol_col = FALSE
 )
 }
 \arguments{
-\item{x}{Wide numeric matrix / data frame, rows = samples.}
-
-\item{sample_meta}{Sample metadata with the volume / IS columns.}
+\item{de}{A `struct::DatasetExperiment`.}
 
 \item{sample_vol_col, cal_vol_col, sample_IS_col, cal_IS_col}{`sample_meta`
-columns for the vial-level correction.}
+columns holding, respectively, the sample's reconstitution volume, the
+calibration-standard volume, the IS volume added to the sample, and the IS
+volume added to the calibration standard.}
 
 \item{starting_vol_col}{`sample_meta` column holding the pre-dry-down
-(starting) volume, or `FALSE` to skip the starting-volume step.}
-
-\item{name_col}{`sample_meta` column matching the row names of `x`.}
+starting volume, or `FALSE` to skip the starting-volume correction.}
 }
 \value{
-`x` scaled to concentration per sample.
+`de` with `data` scaled to concentration per sample.
 }
 \description{
-Applies the vial-level concentration correction (cal_vol/sample_vol and the
-IS ratio), and -- when `starting_vol_col` is set --
-chains the starting-volume correction back to the concentration in the
-original (undried) sample.
+Concentrations read off a calibration curve assume every sample was prepared
+exactly like the calibration standards -- same final volume, same amount of
+internal standard. This corrects each sample for its own reconstitution
+volume and IS amount:
+}
+\details{
+\deqn{conc \times (cal\_vol / sample\_vol) \times (sample\_IS / cal\_IS)}
+
+A larger reconstitution volume dilutes the analyte and lowers the corrected
+concentration; more internal standard added to the sample raises it back
+proportionally. When `starting_vol_col` is supplied, a second correction
+scales back to the concentration in the original, pre-dry-down sample
+(\eqn{conc \times sample\_vol / starting\_vol}), since mass is conserved
+through the dry-down and reconstitution step.
 }
 \examples{
-m  <- data.frame(A = c(10, 20), B = c(30, 40), row.names = c("S1", "S2"))
-sm <- data.frame(Name = c("S1", "S2"),
-                 sample_volume_uL = c(100, 100), cal_vol_uL = c(100, 100),
-                 sample_IS_vol_uL = c(10, 10),   cal_IS_vol_uL = c(10, 10))
-adjust_concentration(m, sm)
+de <- struct::DatasetExperiment(
+  data = data.frame(PGE2 = c(10, 20), PGD2 = c(30, 40),
+                    row.names = c("S1", "S2")),
+  sample_meta = data.frame(sample_volume_uL = c(100, 50),
+                           cal_vol_uL       = c(100, 100),
+                           sample_IS_vol_uL = c(10, 10),
+                           cal_IS_vol_uL    = c(10, 10),
+                           row.names = c("S1", "S2")),
+  variable_meta = data.frame(Compound = c("PGE2", "PGD2"),
+                             row.names = c("PGE2", "PGD2")))
+adjust_concentration(de)$data
 }
+\seealso{
+Other workflow steps:
+\code{\link[=assemble_dataset]{assemble_dataset()}},
+\code{\link[=correct_batch]{correct_batch()}},
+\code{\link[=filter_blanks]{filter_blanks()}},
+\code{\link[=impute_missing]{impute_missing()}},
+\code{\link[=normalise_matrix]{normalise_matrix()}},
+\code{\link[=process_dataset]{process_dataset()}},
+\code{\link[=read_skyline]{read_skyline()}},
+\code{\link[=read_targetlynx]{read_targetlynx()}}
+}
+\concept{workflow steps}

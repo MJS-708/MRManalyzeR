@@ -1,6 +1,6 @@
 #' Render the bundled example MRManalyzeR reports
 #'
-#' Convenience wrapper that drives the full pipeline against the bundled
+#' Convenience wrapper that drives the full workflow against the bundled
 #' oxylipin example dataset (a subset of Kolmert et al. 2018,
 #' \doi{10.1016/j.prostaglandins.2018.05.005}). It loads
 #' `inst/extdata/example_data.xlsx` and `inst/extdata/example_config.yml`,
@@ -14,13 +14,14 @@
 #'   viewer after rendering? Default `TRUE` in interactive sessions.
 #' @param render Logical. Render the HTML reports? Default `TRUE`. Set
 #'   `FALSE` to build the peak matrix + xlsx/RDS outputs only (no pandoc) -
-#'   a quick smoke test of the processing pipeline.
+#'   a quick smoke test of the processing workflow.
 #' @return Invisibly, the list returned by [`run_MRManalyzeR()`]; the
 #'   resolved results directory is attached as attribute `"results_dir"`.
 #' @examples
 #' # Light run: build the peak matrix + outputs, skip HTML report rendering.
 #' res <- run_example(render = FALSE, open = FALSE)
 #' attr(res, "results_dir")   # where the xlsx + rds landed
+#' @family entry points
 #' @export
 run_example = function(results_dir = tempfile("MRManalyzeR_example_"),
                        open        = interactive(),

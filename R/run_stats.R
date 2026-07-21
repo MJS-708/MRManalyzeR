@@ -27,6 +27,7 @@
 #'   list(name = "ctrl_vs_trt",
 #'        compare = list(factor = "Group", levels = c("ctrl", "trt"))))))
 #' run_stats(de, params)$stats
+#' @family analysis steps
 #' @export
 run_stats = function(de, st_params){
 

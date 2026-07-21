@@ -2,7 +2,7 @@
 #'
 #' Computes the per-feature coefficient of variation (100 * sd / mean) over the
 #' QC samples (`CV_QC`) and the biological samples (`CV_sample`), plus their
-#' ratio (`CV_sample/CV_QC`), and adds all three as columns of `variable_meta`,
+#' ratio (`CV_sample_vs_QC`), and adds all three as columns of `variable_meta`,
 #' matched to each feature by row (Compound). QC / sample rows are identified
 #' from `sample_type_head` in `sample_meta`.
 #'
@@ -10,7 +10,7 @@
 #' @param sample_type_head `sample_meta` column classifying sample type.
 #' @param qc_label Value(s) in `sample_type_head` marking QC samples.
 #' @param sample_labels Value(s) marking biological samples.
-#' @return `de` with `CV_QC`, `CV_sample` and `CV_sample/CV_QC` columns added to
+#' @return `de` with `CV_QC`, `CV_sample` and `CV_sample_vs_QC` columns added to
 #'   `variable_meta`.
 #' @keywords internal
 #' @noRd
@@ -34,7 +34,10 @@
   key = rownames(vm)                       # Compound == colnames(dm)
   vm$CV_QC                = unname(cv_qc[key])
   vm$CV_sample            = unname(cv_sample[key])
-  vm[["CV_sample/CV_QC"]] = round(unname(cv_sample[key]) / unname(cv_qc[key]), 2)
+  # Named CV_sample_vs_QC, not "CV_sample/CV_QC": assigning into a
+  # DatasetExperiment passes the frame through make.names(), which would
+  # silently rewrite the "/" to "." anyway.
+  vm$CV_sample_vs_QC = round(unname(cv_sample[key]) / unname(cv_qc[key]), 2)
 
   de$variable_meta = vm
   de

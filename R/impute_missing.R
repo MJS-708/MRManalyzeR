@@ -1,39 +1,61 @@
-#' Impute missing values with per-feature minimum * scalar
+#' Impute missing values with a fraction of the per-feature minimum
 #'
-#' Zeros are treated as NA. For each feature (column), NAs among non-blank
-#' samples are replaced with `min(non-NA) * scalar`. Blank samples are
-#' untouched and re-bound at the end.
+#' Zeros are treated as missing. For each feature, `NA`s among the non-blank
+#' injections are replaced with `min(non-NA) * scalar` -- the common
+#' "half-minimum" style of imputation for non-detects, which places them just
+#' below the lowest value actually observed. Blank injections (identified from
+#' `blank_head` in `sample_meta`) are left untouched.
 #'
-#' @param df Data frame or matrix of samples x features (rownames = sample names).
-#' @param blank_samples Character vector of sample names to treat as blanks.
-#' @param scalar Numeric multiplier applied to the feature minimum (e.g. 0.2).
-#' @return Data frame of samples x features with NAs imputed.
+#' This is the only imputation applied to the reported matrix, and it is
+#' deliberately simple: for a targeted panel a compound that is missing in most
+#' samples is usually better dropped than modelled. Where the choice matters
+#' more -- ahead of PCA -- [run_pca()] offers `"none"`, `"min"`, `"half_min"`
+#' and `"frac_min"`, plus per-feature and per-sample missingness filters that
+#' discard rather than fill.
+#'
+#' @param de A `struct::DatasetExperiment`.
+#' @param scalar Numeric multiplier applied to the per-feature minimum, e.g.
+#'   `0.5` for half-minimum or `0.2` for a fifth of the minimum.
+#' @param blank_head `sample_meta` column identifying blank injections.
+#' @param blank_name Value in `blank_head` marking a blank injection.
+#' @return `de` with `data` imputed, in the original row order.
+#' @family workflow steps
 #' @examples
-#' m <- data.frame(A = c(10, 5, NA), B = c(2, NA, 4),
-#'                 row.names = c("S1", "S2", "S3"))
-#' impute_missing(m, blank_samples = character(0), scalar = 0.5)
+#' de <- struct::DatasetExperiment(
+#'   data = data.frame(PGE2 = c(10, 5, NA), PGD2 = c(2, NA, 4),
+#'                     row.names = c("S1", "S2", "S3")),
+#'   sample_meta = data.frame(Sample_type = rep("Sample", 3),
+#'                            row.names = c("S1", "S2", "S3")),
+#'   variable_meta = data.frame(Compound = c("PGE2", "PGD2"),
+#'                              row.names = c("PGE2", "PGD2")))
+#' impute_missing(de, scalar = 0.5)$data
 #' @export
-impute_missing = function(df, blank_samples, scalar){
+impute_missing = function(de, scalar, blank_head = "Sample_type",
+                          blank_name = "Blank"){
 
-  if(isTRUE(scalar)){
-    stop("`scalar` must be numeric (e.g. 0.2), not TRUE.")
-  }
+  if(isTRUE(scalar))
+    stop("`scalar` must be numeric (e.g. 0.5), not TRUE.")
+
+  df    = as.data.frame(de$data)
+  smeta = as.data.frame(de$sample_meta)
+
+  blank_samples = if(blank_head %in% colnames(smeta))
+    rownames(smeta)[smeta[[blank_head]] %in% blank_name] else character(0)
 
   df[df == 0] = NA
+  is_blank = rownames(df) %in% blank_samples
 
-  blank_df = df[rownames(df) %in% blank_samples, , drop = FALSE]
-  sample_df = df[!rownames(df) %in% blank_samples, , drop = FALSE]
+  # Per-feature minimum across the non-blank injections only.
+  sample_df = df[!is_blank, , drop = FALSE]
+  fill_vals = suppressWarnings(vapply(sample_df, min, numeric(1), na.rm = TRUE)) * scalar
 
-  # Per-feature minimum across non-blank samples
-  min_vals = suppressWarnings(vapply(sample_df, min, numeric(1), na.rm = TRUE))
-  fill_vals = min_vals * scalar
-
-  # Vectorized imputation: only columns with a finite min
+  # Impute in place so the dataset's row order is preserved.
   for(j in which(is.finite(fill_vals))){
-    col = sample_df[[j]]
-    col[is.na(col)] = fill_vals[j]
-    sample_df[[j]] = col
+    col = df[[j]]
+    col[is.na(col) & !is_blank] = fill_vals[j]
+    df[[j]] = col
   }
 
-  return(rbind(sample_df, blank_df))
+  de$data = df
+  de
 }

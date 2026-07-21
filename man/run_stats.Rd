@@ -41,3 +41,9 @@ params <- list(comparisons = list(enabled = TRUE, entries = list(
        compare = list(factor = "Group", levels = c("ctrl", "trt"))))))
 run_stats(de, params)$stats
 }
+\seealso{
+Other analysis steps:
+\code{\link[=run_pca]{run_pca()}},
+\code{\link[=subset_dataset]{subset_dataset()}}
+}
+\concept{analysis steps}

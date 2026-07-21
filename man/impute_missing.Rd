@@ -2,27 +2,57 @@
 % Please edit documentation in R/impute_missing.R
 \name{impute_missing}
 \alias{impute_missing}
-\title{Impute missing values with per-feature minimum * scalar}
+\title{Impute missing values with a fraction of the per-feature minimum}
 \usage{
-impute_missing(df, blank_samples, scalar)
+impute_missing(de, scalar, blank_head = "Sample_type", blank_name = "Blank")
 }
 \arguments{
-\item{df}{Data frame or matrix of samples x features (rownames = sample names).}
+\item{de}{A `struct::DatasetExperiment`.}
 
-\item{blank_samples}{Character vector of sample names to treat as blanks.}
+\item{scalar}{Numeric multiplier applied to the per-feature minimum, e.g.
+`0.5` for half-minimum or `0.2` for a fifth of the minimum.}
 
-\item{scalar}{Numeric multiplier applied to the feature minimum (e.g. 0.2).}
+\item{blank_head}{`sample_meta` column identifying blank injections.}
+
+\item{blank_name}{Value in `blank_head` marking a blank injection.}
 }
 \value{
-Data frame of samples x features with NAs imputed.
+`de` with `data` imputed, in the original row order.
 }
 \description{
-Zeros are treated as NA. For each feature (column), NAs among non-blank
-samples are replaced with `min(non-NA) * scalar`. Blank samples are
-untouched and re-bound at the end.
+Zeros are treated as missing. For each feature, `NA`s among the non-blank
+injections are replaced with `min(non-NA) * scalar` -- the common
+"half-minimum" style of imputation for non-detects, which places them just
+below the lowest value actually observed. Blank injections (identified from
+`blank_head` in `sample_meta`) are left untouched.
+}
+\details{
+This is the only imputation applied to the reported matrix, and it is
+deliberately simple: for a targeted panel a compound that is missing in most
+samples is usually better dropped than modelled. Where the choice matters
+more -- ahead of PCA -- [run_pca()] offers `"none"`, `"min"`, `"half_min"`
+and `"frac_min"`, plus per-feature and per-sample missingness filters that
+discard rather than fill.
 }
 \examples{
-m <- data.frame(A = c(10, 5, NA), B = c(2, NA, 4),
-                row.names = c("S1", "S2", "S3"))
-impute_missing(m, blank_samples = character(0), scalar = 0.5)
+de <- struct::DatasetExperiment(
+  data = data.frame(PGE2 = c(10, 5, NA), PGD2 = c(2, NA, 4),
+                    row.names = c("S1", "S2", "S3")),
+  sample_meta = data.frame(Sample_type = rep("Sample", 3),
+                           row.names = c("S1", "S2", "S3")),
+  variable_meta = data.frame(Compound = c("PGE2", "PGD2"),
+                             row.names = c("PGE2", "PGD2")))
+impute_missing(de, scalar = 0.5)$data
 }
+\seealso{
+Other workflow steps:
+\code{\link[=adjust_concentration]{adjust_concentration()}},
+\code{\link[=assemble_dataset]{assemble_dataset()}},
+\code{\link[=correct_batch]{correct_batch()}},
+\code{\link[=filter_blanks]{filter_blanks()}},
+\code{\link[=normalise_matrix]{normalise_matrix()}},
+\code{\link[=process_dataset]{process_dataset()}},
+\code{\link[=read_skyline]{read_skyline()}},
+\code{\link[=read_targetlynx]{read_targetlynx()}}
+}
+\concept{workflow steps}

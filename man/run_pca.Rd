@@ -16,7 +16,8 @@ run_pca(
 )
 }
 \arguments{
-\item{X}{numeric matrix (rows = samples, cols = features). May contain NAs.}
+\item{X}{A `struct::DatasetExperiment` (its `data` is used), or a numeric
+matrix / data frame of samples x features. May contain NAs.}
 
 \item{impute}{one of `"none"`, `"min"`, `"half_min"`, `"frac_min"` (default `"min"`).
 `"frac_min"` multiplies the per-feature minimum by `impute_frac` (e.g. 0.2).}
@@ -73,3 +74,9 @@ X <- matrix(abs(rnorm(60, 100, 20)), nrow = 12,
 res <- run_pca(X, transform = "log2")
 res$steps
 }
+\seealso{
+Other analysis steps:
+\code{\link[=run_stats]{run_stats()}},
+\code{\link[=subset_dataset]{subset_dataset()}}
+}
+\concept{analysis steps}

@@ -131,12 +131,13 @@ concentration adjustment and batch correction to produce a
 `struct::DatasetExperiment`.
 }
 \details{
-The peak-matrix pipeline behind [run_MRManalyzeR()], composed of the public
+The peak-matrix workflow behind [run_MRManalyzeR()], composed of the public
 step functions: it reads the workbook ([read_targetlynx()] /
-[read_skyline()]) into a wide sample x compound matrix, then per batch
-applies [filter_blanks()], [normalise_matrix()], [adjust_concentration()]
-and [impute_missing()], assembles a `struct::DatasetExperiment`
-([assemble_dataset()]) and optionally batch-corrects it ([correct_batch()]).
+[read_skyline()]) into a wide sample x compound matrix, assembles that into a
+`struct::DatasetExperiment` ([assemble_dataset()]), then applies
+[filter_blanks()], [normalise_matrix()], [adjust_concentration()] and
+[impute_missing()] to the dataset per acquisition batch, and optionally
+batch-corrects the result ([correct_batch()]).
 }
 \examples{
 xlsx  <- system.file("extdata", "example_data.xlsx", package = "MRManalyzeR")
@@ -149,3 +150,17 @@ out <- process_dataset(fdata, meta, xlsx_path = xlsx,
                        blank_head = "Sample_type")
 out[[1]]
 }
+\seealso{
+[run_MRManalyzeR()] to drive the whole workflow from a YAML config.
+
+Other workflow steps:
+\code{\link[=adjust_concentration]{adjust_concentration()}},
+\code{\link[=assemble_dataset]{assemble_dataset()}},
+\code{\link[=correct_batch]{correct_batch()}},
+\code{\link[=filter_blanks]{filter_blanks()}},
+\code{\link[=impute_missing]{impute_missing()}},
+\code{\link[=normalise_matrix]{normalise_matrix()}},
+\code{\link[=read_skyline]{read_skyline()}},
+\code{\link[=read_targetlynx]{read_targetlynx()}}
+}
+\concept{workflow steps}

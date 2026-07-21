@@ -202,7 +202,7 @@ cv_table = data.frame(
   check.names      = FALSE,
   stringsAsFactors = FALSE
 )
-cv_table[["CV_sample/CV_QC"]] = round(cv_sample_vec / cv_qc_vec, 2)
+cv_table$CV_sample_vs_QC = round(cv_sample_vec / cv_qc_vec, 2)
 
 if(length(qc_idx) < 2){
   cat(sprintf(

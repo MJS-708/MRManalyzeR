@@ -20,6 +20,7 @@
 #' de <- struct::DatasetExperiment(data = m, sample_meta = sm, variable_meta = fm)
 #' correct_batch(de, qc_label = "Sample", factor_name = "Sample_type",
 #'               batch_head = "Chrom_Batch")
+#' @family workflow steps
 #' @export
 correct_batch = function(de, qc_label = "QC", factor_name = "Sample_type",
                          batch_head = "Chrom_Batch"){

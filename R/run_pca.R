@@ -15,7 +15,8 @@
 #' were actually applied - reports embed this so the user can see at a
 #' glance what transformation went into the PCA.
 #'
-#' @param X numeric matrix (rows = samples, cols = features). May contain NAs.
+#' @param X A `struct::DatasetExperiment` (its `data` is used), or a numeric
+#'   matrix / data frame of samples x features. May contain NAs.
 #' @param impute one of `"none"`, `"min"`, `"half_min"`, `"frac_min"` (default `"min"`).
 #'   `"frac_min"` multiplies the per-feature minimum by `impute_frac` (e.g. 0.2).
 #' @param impute_frac Numeric multiplier used when `impute = "frac_min"` (default 0.5).
@@ -44,6 +45,7 @@
 #'             dimnames = list(paste0("S", 1:12), paste0("F", 1:5)))
 #' res <- run_pca(X, transform = "log2")
 #' res$steps
+#' @family analysis steps
 #' @export
 run_pca = function(X,
                             impute        = c("min", "half_min", "frac_min", "none"),
@@ -61,6 +63,7 @@ run_pca = function(X,
   feat_na_max   = as.numeric(feat_na_max)
   sample_na_max = as.numeric(sample_na_max)
 
+  if(methods::is(X, "DatasetExperiment")) X = X$data
   X = as.matrix(X)
 
   # 1. Drop all-NA features (always) + optional stricter feature filter

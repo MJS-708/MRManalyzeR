@@ -42,3 +42,15 @@ xlsx <- system.file("extdata", "example_data.xlsx", package = "MRManalyzeR")
 m <- read_targetlynx(xlsx, datatype = "Area", snr = 3)
 dim(m)
 }
+\seealso{
+Other workflow steps:
+\code{\link[=adjust_concentration]{adjust_concentration()}},
+\code{\link[=assemble_dataset]{assemble_dataset()}},
+\code{\link[=correct_batch]{correct_batch()}},
+\code{\link[=filter_blanks]{filter_blanks()}},
+\code{\link[=impute_missing]{impute_missing()}},
+\code{\link[=normalise_matrix]{normalise_matrix()}},
+\code{\link[=process_dataset]{process_dataset()}},
+\code{\link[=read_skyline]{read_skyline()}}
+}
+\concept{workflow steps}

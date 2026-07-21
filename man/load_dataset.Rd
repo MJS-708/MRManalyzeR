@@ -19,7 +19,7 @@ key when loading from xlsx. Default `"Sample_ID"`.}
 A `struct::DatasetExperiment`.
 }
 \description{
-Used by [`combine_datasets()`] so the combine pipeline can mix RDS and
+Used by [`combine_datasets()`] so the combine workflow can mix RDS and
 xlsx inputs (xlsx loading reconstructs a `DatasetExperiment` from the
 standard sheets `feature_metadata`, `sample_metadata`, `matrix` written
 by [`run_MRManalyzeR()`]).

@@ -49,7 +49,7 @@ devtools::install("path/to/MRManalyzeR")
 
 ## Quick start — bundled example
 
-Run the pipeline against a small bundled oxylipin dataset to verify the
+Run the workflow against a small bundled oxylipin dataset to verify the
 install and produce both reports. No paths to configure:
 
 ```r
