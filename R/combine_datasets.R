@@ -41,6 +41,12 @@
 #'   across two or more inputs - note that the resulting names depend on which
 #'   datasets are combined, so `"auto"` is not stable across different combine
 #'   runs.
+#' @param duplicate_samples What to do when a dataset holds more than one row
+#'   with the same `sample_id_col`. `"error"` (default) stops and names them;
+#'   `"first"` keeps the first occurrence; `"mean"` or `"median"` aggregate the
+#'   measurements, taking metadata from the first row. A duplicate is either a
+#'   deliberate re-injection or a data-entry error and those want opposite
+#'   treatment, so the caller decides rather than the package.
 #' @param combined_name Name attribute of the resulting `DatasetExperiment`.
 #' @return A single `struct::DatasetExperiment` containing the merged data.
 #' @examples
@@ -65,8 +71,11 @@ combine_datasets = function(paths,
                             sample_id_col       = "Sample_ID",
                             drop_samples        = NULL,
                             prefix_features     = FALSE,   # FALSE | TRUE | "auto"
-                            combined_name       = "combined"){
+                            combined_name       = "combined",
+                            duplicate_samples   = c("error", "first",
+                                                    "mean", "median")){
 
+  duplicate_samples = match.arg(duplicate_samples)
   stopifnot(length(paths) >= 1)
   stopifnot(all(file.exists(paths)))
   if(!identical(prefix_features, FALSE) &&
@@ -130,13 +139,42 @@ combine_datasets = function(paths,
     dup_any = duplicated(sid_tmp)
     if(any(dup_any)){
       dup_ids = unique(sid_tmp[dup_any])
-      message(sprintf(
-        "[combine] '%s': collapsed %d duplicate Sample_ID(s) to first occurrence: %s",
-        tag, length(dup_ids), paste(dup_ids, collapse = ", ")))
-      keep    = !dup_any
-      smeta   = smeta[keep, , drop = FALSE]
-      dat     = dat[keep,   , drop = FALSE]
-      sid_tmp = sid_tmp[keep]
+      msg = sprintf(
+        "'%s': %d duplicate %s(s): %s.", tag, length(dup_ids),
+        sample_id_col, paste(dup_ids, collapse = ", "))
+
+      # A duplicate identifier means either a deliberate re-injection or a
+      # data-entry error, and those want opposite treatment - so the caller
+      # says which. Defaulting to "error" because silently keeping the first
+      # row discards a real measurement in one case and hides a mistake in
+      # the other.
+      if(identical(duplicate_samples, "error"))
+        stop(sprintf(
+          "[combine_datasets] %s Set duplicate_samples to 'first', 'mean' or 'median' to combine them, or mark re-injections Include = 'NO' before processing.",
+          msg))
+
+      message(sprintf("[combine] %s Resolving with '%s'.", msg,
+                      duplicate_samples))
+
+      if(identical(duplicate_samples, "first")){
+        keep    = !dup_any
+        smeta   = smeta[keep, , drop = FALSE]
+        dat     = dat[keep,   , drop = FALSE]
+        sid_tmp = sid_tmp[keep]
+      } else {
+        agg = if(identical(duplicate_samples, "mean")) mean else stats::median
+        dat = as.data.frame(
+          t(vapply(split(seq_along(sid_tmp), sid_tmp), function(i)
+            apply(dat[i, , drop = FALSE], 2, agg, na.rm = TRUE),
+            numeric(ncol(dat)))), check.names = FALSE)
+        # Metadata is taken from the first row of each group: aggregating
+        # injections does not aggregate their annotation.
+        first = !duplicated(sid_tmp)
+        smeta = smeta[first, , drop = FALSE]
+        rownames(smeta) = sid_tmp[first]
+        smeta = smeta[rownames(dat), , drop = FALSE]
+        sid_tmp = rownames(dat)
+      }
     }
 
     # 2. Optional QC remap: rename QC IDs and drop unmapped QCs (per-dataset).

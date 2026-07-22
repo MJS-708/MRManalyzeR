@@ -1,14 +1,33 @@
 #' Run all statistics defined by the YAML `stats_report:` block
 #'
-#' Iterates over `comparisons:`, `correlations:`, and `linear_models:` and
-#' returns a list of three tidy data frames suitable for writing to xlsx
+#' Iterates over `comparisons:`, `correlations:`, `linear_models:` and
+#' `ion_ratios:` and returns tidy data frames suitable for writing to xlsx
 #' tabs.
 #'
-#' Method auto-selection for comparisons:
+#' Each comparison names its own test, because the choice has to be made
+#' before the p-values are seen:
 #' \itemize{
-#'   \item 2 levels  -> t-test + Wilcoxon
-#'   \item 3+ levels -> ANOVA + Kruskal-Wallis (+ Tukey HSD + pairwise Wilcoxon post-hoc)
+#'   \item 2 levels  -> `welch` (default), `student`, or `wilcoxon`
+#'   \item 3+ levels -> `anova` (default, with Tukey HSD post-hoc) or
+#'     `kruskal` (with Holm-adjusted pairwise Wilcoxon post-hoc)
 #' }
+#' A comparison with no `method:` falls back to the default and says so, so
+#' existing configurations keep running.
+#'
+#' Add `paired: true` together with `subject:` naming the `sample_meta` column
+#' that links the two observations of each subject - pre/post, matched tissues,
+#' the same animal at two timepoints. Only subjects present in both groups
+#' contribute, and the effect size becomes Cohen's dz (or the matched-pairs
+#' rank-biserial correlation for `wilcoxon`), which is *not* comparable to the
+#' between-group values and is labelled distinctly so the two are never pooled.
+#' The method label gains a `_paired` suffix for the same reason.
+#'
+#' Multiple-testing correction is applied *within families*, not across the
+#' whole table: one family per comparison and method, per correlation analysis
+#' and subset and method, and per linear-model term. The family used for each
+#' row is recorded in its `adjust_family` column. Adjusting across unrelated
+#' analyses would make the size of the correction depend on how many other
+#' things happened to be configured in the same YAML.
 #'
 #' @param de A `struct::DatasetExperiment` (from `run_MRManalyzeR()` or `readRDS()`).
 #' @param st_params The `stats_report:` block from the YAML (a list).
@@ -24,7 +43,7 @@
 #'                  row.names = paste0("S", 1:6))
 #' de <- struct::DatasetExperiment(data = m, sample_meta = sm, variable_meta = fm)
 #' params <- list(comparisons = list(enabled = TRUE, entries = list(
-#'   list(name = "ctrl_vs_trt",
+#'   list(name = "ctrl_vs_trt", method = "welch",
 #'        compare = list(factor = "Group", levels = c("ctrl", "trt"))))))
 #' run_stats(de, params)$stats
 #' @family stats
@@ -53,6 +72,35 @@ run_stats = function(de, st_params){
 
 # ---- Comparisons -----------------------------------------------------------
 
+#' Adjust p-values within families rather than across the whole table
+#'
+#' Multiple-testing correction only means something relative to a stated
+#' family. Adjusting one table that mixes several comparisons, both a
+#' parametric and a non-parametric test of the same hypothesis, and global
+#' tests alongside their own post-hoc results, controls nothing anybody asked
+#' about: the size of the correction then depends on how many unrelated
+#' analyses happened to be configured in the same YAML.
+#'
+#' So the family is made explicit and recorded in the returned table. Each
+#' family is corrected across features independently.
+#'
+#' @param df A results table with a `p_value` column.
+#' @param keys Column names whose combination defines a family.
+#' @param p_adjust Method passed to [stats::p.adjust()].
+#' @param sig_threshold Threshold applied to the adjusted value.
+#' @return `df` with `adjust_family`, `p_adj` and `significant` filled in.
+#' @keywords internal
+#' @noRd
+.adjust_within = function(df, keys, p_adjust, sig_threshold){
+  if(nrow(df) == 0) return(df)
+  fam = do.call(paste, c(df[keys], sep = " | "))
+  df$adjust_family = fam
+  df$p_adj = stats::ave(df$p_value, fam, FUN = function(p)
+    stats::p.adjust(p, method = p_adjust))
+  df$significant = df$p_adj < sig_threshold
+  df
+}
+
 #' @keywords internal
 #' @noRd
 .run_comparisons = function(de, comparisons, p_adjust, sig_threshold){
@@ -65,11 +113,128 @@ run_stats = function(de, st_params){
   })
 
   out = dplyr::bind_rows(rows)
-  if(nrow(out) > 0){
-    out$p_adj       = stats::p.adjust(out$p_value, method = p_adjust)
-    out$significant = out$p_adj < sig_threshold
-  }
+  # For `tukey` rows p_value is ALREADY adjusted across the pairwise
+  # comparisons within a feature, by TukeyHSD() itself. p_adj then controls
+  # the false discovery rate across features. Those are two different
+  # families, so this is not a double correction of one family - but it is
+  # conservative, because BH assumes p-values uniform under the null and
+  # Tukey-adjusted values are not. Read p_adj on post-hoc rows accordingly.
+  out = .adjust_within(out, c("comparison", "method"), p_adjust,
+                       sig_threshold)
   out
+}
+
+#' Resolve the test method for one comparison
+#'
+#' The method must be decided before the p-values are seen. Running a
+#' parametric and a non-parametric test of the same hypothesis and reporting
+#' both lets the reader choose whichever came out lower, which is a forking
+#' path rather than two pieces of evidence - so a comparison names one.
+#'
+#' `"welch"` is the default two-group test because [stats::t.test()] does not
+#' assume equal variances and group sizes in a targeted study are usually
+#' unequal; `"student"` requests the equal-variance form explicitly.
+#'
+#' @param comp A comparison entry; `comp$method` is read.
+#' @param ngrp Number of non-empty levels.
+#' @param comp_name Used in messages.
+#' @return One of `"welch"`, `"student"`, `"wilcoxon"` (two groups) or
+#'   `"anova"`, `"kruskal"` (three or more).
+#' Hedges' g for two independent groups
+#'
+#' Cohen's d on the pooled standard deviation, times the small-sample
+#' correction J. Reported for both t-test variants: the correction matters at
+#' the group sizes a targeted study runs, where d is biased upwards.
+#'
+#' Sign follows `log2FC`: positive means group 2 is higher.
+#'
+#' @param x1,x2 Numeric vectors, group 1 and group 2.
+#' @return Numeric, or `NA` when either group has fewer than two values.
+#' @keywords internal
+#' @noRd
+.hedges_g = function(x1, x2){
+  x1 = x1[!is.na(x1)]; x2 = x2[!is.na(x2)]
+  n1 = length(x1); n2 = length(x2)
+  if(n1 < 2 || n2 < 2) return(NA_real_)
+  s_pool = sqrt(((n1 - 1) * stats::var(x1) + (n2 - 1) * stats::var(x2)) /
+                (n1 + n2 - 2))
+  if(!is.finite(s_pool) || s_pool == 0) return(NA_real_)
+  d = (mean(x2) - mean(x1)) / s_pool
+  d * (1 - 3 / (4 * (n1 + n2) - 9))          # Hedges' correction
+}
+
+#' Cohen's dz for paired observations
+#'
+#' The mean of the within-subject differences over their standard deviation.
+#' Deliberately not comparable to Hedges' g: dz depends on how correlated the
+#' pairs are, so a paired and an unpaired effect size must not be pooled.
+#'
+#' @param x1,x2 Paired numeric vectors, aligned subject by subject.
+#' @return Numeric, or `NA`.
+#' @keywords internal
+#' @noRd
+.cohens_dz = function(x1, x2){
+  d = x2 - x1
+  d = d[!is.na(d)]
+  if(length(d) < 2) return(NA_real_)
+  sdd = stats::sd(d)
+  if(!is.finite(sdd) || sdd == 0) return(NA_real_)
+  mean(d) / sdd
+}
+
+#' Matched-pairs rank-biserial correlation
+#'
+#' From the signed-rank statistic V: the difference between the proportion of
+#' rank mass favouring each direction. Signed like `log2FC`.
+#'
+#' @param V The `statistic` from a paired [stats::wilcox.test()].
+#' @param n Number of pairs.
+#' @return Numeric, or `NA`.
+#' @keywords internal
+#' @noRd
+.rank_biserial_paired = function(V, n){
+  if(is.null(V) || is.na(V) || n < 1) return(NA_real_)
+  1 - 4 * unname(V) / (n * (n + 1))
+}
+
+#' Rank-biserial correlation from a Wilcoxon rank-sum statistic
+#'
+#' The non-parametric companion to Hedges' g: the difference between the
+#' proportion of cross-group pairs favouring each group, bounded -1 to 1.
+#' Signed like `log2FC`, so positive means group 2 is higher.
+#'
+#' @param W The `statistic` from [stats::wilcox.test()] (group 1 first).
+#' @param n1,n2 Group sizes used in the test.
+#' @return Numeric, or `NA`.
+#' @keywords internal
+#' @noRd
+.rank_biserial = function(W, n1, n2){
+  if(is.null(W) || is.na(W) || n1 < 1 || n2 < 1) return(NA_real_)
+  1 - 2 * unname(W) / (n1 * n2)
+}
+
+#' @keywords internal
+#' @noRd
+.resolve_method = function(comp, ngrp, comp_name){
+  allowed = if(ngrp == 2) c("welch", "student", "wilcoxon")
+            else          c("anova", "kruskal")
+  m = comp$method
+
+  if(is.null(m)){
+    m = allowed[1]
+    message(sprintf(
+      "[run_stats] comparison '%s' has no method:; defaulting to '%s'. Set method: in the YAML to pre-specify the test.",
+      comp_name, m))
+    return(m)
+  }
+
+  m = tolower(as.character(m)[1])
+  if(identical(m, "t_test") || identical(m, "t-test")) m = "welch"
+  if(!m %in% allowed)
+    stop(sprintf(
+      "[run_stats] comparison '%s': method '%s' is not valid for %d groups. Use one of: %s.",
+      comp_name, m, ngrp, paste(allowed, collapse = ", ")))
+  m
 }
 
 #' @keywords internal
@@ -106,40 +271,115 @@ run_stats = function(de, st_params){
   feats = colnames(data)
   ngrp  = nlevels(droplevels(group))
 
+  method = .resolve_method(comp, ngrp, comp_name)
+  paired = isTRUE(comp$paired)
+
+  subject = NULL
+  if(paired){
+    if(ngrp != 2)
+      stop(sprintf("Comparison '%s': paired analysis needs exactly 2 levels.",
+                   comp_name))
+    sub_col = comp$subject %||% stop(sprintf(
+      "Comparison '%s': paired: true also needs subject: naming the sample_meta column that pairs the observations.",
+      comp_name))
+    if(!sub_col %in% colnames(de_sub$sample_meta))
+      stop(sprintf("Comparison '%s': subject column '%s' not in sample_meta.",
+                   comp_name, sub_col))
+    subject = as.character(de_sub$sample_meta[[sub_col]])
+  }
+
   if(ngrp == 2){
-    .compare_two(comp_name, data, group, feats, levels_keep)
+    .compare_two(comp_name, data, group, feats, levels_keep, method,
+                 subject = subject)
   } else {
-    .compare_many(comp_name, data, group, feats, levels_keep)
+    .compare_many(comp_name, data, group, feats, levels_keep, method)
   }
 }
 
 #' @keywords internal
 #' @noRd
-.compare_two = function(comp_name, data, group, feats, levels_keep){
+.compare_two = function(comp_name, data, group, feats, levels_keep,
+                        method = "welch", subject = NULL){
   g1 = levels_keep[1]; g2 = levels_keep[2]
   i1 = which(group == g1); i2 = which(group == g2)
 
+  # Paired analysis needs the two vectors aligned subject by subject, and only
+  # subjects measured in both conditions contribute. Dropping the unmatched
+  # ones is the point of pairing: an unpaired test on the same data throws away
+  # the very structure that makes it powerful.
+  paired = !is.null(subject)
+  if(paired){
+    s1 = subject[i1]; s2 = subject[i2]
+    if(anyDuplicated(s1) || anyDuplicated(s2))
+      stop(sprintf("Comparison '%s': subject values are not unique within a group, so observations cannot be paired.",
+                   comp_name))
+    common = intersect(s1, s2)
+    if(length(common) < 2)
+      stop(sprintf("Comparison '%s': only %d subject(s) present in both groups.",
+                   comp_name, length(common)))
+    if(length(common) < length(s1) || length(common) < length(s2))
+      message(sprintf(
+        "[run_stats] comparison '%s': %d subject(s) measured in both groups; unmatched observations dropped.",
+        comp_name, length(common)))
+    i1 = i1[match(common, s1)]
+    i2 = i2[match(common, s2)]
+  }
+
   rows = lapply(feats, function(f){
-    x = data[[f]]
+    x  = data[[f]]
     x1 = x[i1]; x2 = x[i2]
+    n1 = sum(!is.na(x1)); n2 = sum(!is.na(x2))
     m1 = mean(x1, na.rm = TRUE); m2 = mean(x2, na.rm = TRUE)
     fc     = suppressWarnings(m2 / m1)
     log2fc = suppressWarnings(log2(fc))
 
-    tt = tryCatch(stats::t.test(x1, x2),     error = function(e) NULL)
-    wt = tryCatch(stats::wilcox.test(x1, x2, exact = FALSE),
-                  error = function(e) NULL, warning = function(w) NULL)
+    if(method == "wilcoxon"){
+      # conf.int gives the Hodges-Lehmann location shift and its interval -
+      # the non-parametric answer to "by how much", which a p-value alone
+      # does not provide.
+      wt = tryCatch(stats::wilcox.test(x1, x2, exact = FALSE, conf.int = TRUE,
+                                       paired = paired),
+                    error = function(e) NULL, warning = function(w) NULL)
+      return(list(.row(
+        comp_name, "wilcoxon", f, 2, g1, g2, m1, m2, fc, log2fc,
+        statistic = if(is.null(wt)) NA_real_ else unname(wt$statistic),
+        df        = NA_character_,
+        p_value   = if(is.null(wt)) NA_real_ else wt$p.value,
+        n_g1 = n1, n_g2 = n2,
+        n_na_g1 = length(x1) - n1, n_na_g2 = length(x2) - n2,
+        mean_diff = m2 - m1,
+        conf_low  = if(is.null(wt$conf.int)) NA_real_ else -wt$conf.int[2],
+        conf_high = if(is.null(wt$conf.int)) NA_real_ else -wt$conf.int[1],
+        effect_size = if(paired)
+          .rank_biserial_paired(if(is.null(wt)) NA else wt$statistic,
+                                min(n1, n2))
+        else
+          .rank_biserial(if(is.null(wt)) NA else wt$statistic, n1, n2),
+        effect_type = if(paired) "rank_biserial_paired"
+                      else       "rank_biserial")))
+    }
 
-    list(
-      .row(comp_name, "t_test", f, 2, g1, g2, m1, m2, fc, log2fc,
-           statistic = if(is.null(tt)) NA_real_ else unname(tt$statistic),
-           df        = if(is.null(tt)) NA_character_ else as.character(round(tt$parameter, 2)),
-           p_value   = if(is.null(tt)) NA_real_ else tt$p.value),
-      .row(comp_name, "wilcoxon", f, 2, g1, g2, m1, m2, fc, log2fc,
-           statistic = if(is.null(wt)) NA_real_ else unname(wt$statistic),
-           df        = NA_character_,
-           p_value   = if(is.null(wt)) NA_real_ else wt$p.value)
-    )
+    tt = tryCatch(stats::t.test(x1, x2, var.equal = method == "student",
+                                paired = paired),
+                  error = function(e) NULL)
+    list(.row(
+      comp_name, if(paired) paste0(method, "_paired") else method,
+      f, 2, g1, g2, m1, m2, fc, log2fc,
+      statistic = if(is.null(tt)) NA_real_ else unname(tt$statistic),
+      df        = if(is.null(tt)) NA_character_ else as.character(round(tt$parameter, 2)),
+      p_value   = if(is.null(tt)) NA_real_ else tt$p.value,
+      n_g1 = n1, n_g2 = n2,
+      n_na_g1 = length(x1) - n1, n_na_g2 = length(x2) - n2,
+      mean_diff = m2 - m1,
+      # t.test() forms the interval as group1 - group2; negate so it is
+      # signed like mean_diff and log2FC.
+      conf_low  = if(is.null(tt)) NA_real_ else -tt$conf.int[2],
+      conf_high = if(is.null(tt)) NA_real_ else -tt$conf.int[1],
+      # Paired designs use Cohen's dz - the mean difference over the SD of the
+      # differences - which is not comparable to the between-group g and is
+      # named differently so the two are never averaged or ranked together.
+      effect_size = if(paired) .cohens_dz(x1, x2) else .hedges_g(x1, x2),
+      effect_type = if(paired) "cohens_dz" else "hedges_g"))
   })
 
   dplyr::bind_rows(unlist(rows, recursive = FALSE))
@@ -147,48 +387,119 @@ run_stats = function(de, st_params){
 
 #' @keywords internal
 #' @noRd
-.compare_many = function(comp_name, data, group, feats, levels_keep){
+.compare_many = function(comp_name, data, group, feats, levels_keep,
+                         method = "anova"){
+
+  # Shared by both post-hoc paths: the per-pair descriptives.
+  pair_stats = function(x, g_a, g_b){
+    xa = x[group == g_a]; xb = x[group == g_b]
+    list(xa = xa, xb = xb,
+         na = sum(!is.na(xa)), nb = sum(!is.na(xb)),
+         ma = mean(xa, na.rm = TRUE), mb = mean(xb, na.rm = TRUE))
+  }
+
   rows = lapply(feats, function(f){
     x = data[[f]]
     df_in = data.frame(value = x, grp = group)
+    n_tot = sum(!is.na(x))
+    k     = length(levels_keep)
 
-    # Global tests
-    av = tryCatch(stats::aov(value ~ grp, data = df_in),  error = function(e) NULL)
-    av_p = if(is.null(av)) NA_real_ else summary(av)[[1]][["Pr(>F)"]][1]
-    av_f = if(is.null(av)) NA_real_ else summary(av)[[1]][["F value"]][1]
-    av_df = if(is.null(av)) NA_character_ else
-      sprintf("%d,%d", summary(av)[[1]][["Df"]][1], summary(av)[[1]][["Df"]][2])
+    if(method == "kruskal"){
+      kw = tryCatch(stats::kruskal.test(value ~ grp, data = df_in),
+                    error = function(e) NULL)
+      # Epsilon-squared: H / (n - 1), the rank analogue of eta-squared.
+      eps = if(is.null(kw) || n_tot < 2) NA_real_
+            else unname(kw$statistic) / (n_tot - 1)
 
-    kw = tryCatch(stats::kruskal.test(value ~ grp, data = df_in),
-                  error = function(e) NULL)
+      global = list(.row(
+        comp_name, "kruskal", f, k, NA, NA, NA, NA, NA, NA,
+        statistic = if(is.null(kw)) NA_real_ else unname(kw$statistic),
+        df        = if(is.null(kw)) NA_character_ else as.character(kw$parameter),
+        p_value   = if(is.null(kw)) NA_real_ else kw$p.value,
+        effect_size = eps, effect_type = "epsilon_squared"))
 
-    global = list(
-      .row(comp_name, "anova",    f, length(levels_keep), NA, NA, NA, NA, NA, NA,
-           statistic = av_f, df = av_df, p_value = av_p),
-      .row(comp_name, "kruskal",  f, length(levels_keep), NA, NA, NA, NA, NA, NA,
-           statistic = if(is.null(kw)) NA_real_ else unname(kw$statistic),
-           df        = if(is.null(kw)) NA_character_ else as.character(kw$parameter),
-           p_value   = if(is.null(kw)) NA_real_ else kw$p.value)
-    )
+      # Post-hoc must match the global test, so pairwise Wilcoxon rather than
+      # Tukey (which is built on the ANOVA fit). Done pair by pair rather than
+      # via pairwise.wilcox.test() so each row can carry the same statistics,
+      # interval and effect size as the two-group path; the p-values are then
+      # Holm-adjusted across the pairs of this feature, exactly as
+      # pairwise.wilcox.test() would.
+      pairs = utils::combn(levels_keep, 2, simplify = FALSE)
+      raw   = numeric(length(pairs))
+      parts = vector("list", length(pairs))
 
-    # Tukey HSD post-hoc on aov fit
+      for(i in seq_along(pairs)){
+        g_a = pairs[[i]][1]; g_b = pairs[[i]][2]
+        ps  = pair_stats(x, g_a, g_b)
+        wt  = tryCatch(stats::wilcox.test(ps$xa, ps$xb, exact = FALSE,
+                                          conf.int = TRUE),
+                       error = function(e) NULL, warning = function(w) NULL)
+        raw[i]   = if(is.null(wt)) NA_real_ else wt$p.value
+        parts[[i]] = list(g_a = g_a, g_b = g_b, ps = ps, wt = wt)
+      }
+      adj = stats::p.adjust(raw, method = "holm")
+
+      ph_rows = lapply(seq_along(parts), function(i){
+        q = parts[[i]]; ps = q$ps; wt = q$wt
+        fc_pair = suppressWarnings(ps$mb / ps$ma)
+        .row(comp_name, "pairwise_wilcoxon", f, 2, q$g_a, q$g_b,
+             ps$ma, ps$mb, fc_pair, suppressWarnings(log2(fc_pair)),
+             statistic = if(is.null(wt)) NA_real_ else unname(wt$statistic),
+             df = NA_character_,
+             p_value = adj[i],
+             n_g1 = ps$na, n_g2 = ps$nb,
+             n_na_g1 = length(ps$xa) - ps$na,
+             n_na_g2 = length(ps$xb) - ps$nb,
+             mean_diff = ps$mb - ps$ma,
+             conf_low  = if(is.null(wt$conf.int)) NA_real_ else -wt$conf.int[2],
+             conf_high = if(is.null(wt$conf.int)) NA_real_ else -wt$conf.int[1],
+             effect_size = .rank_biserial(if(is.null(wt)) NA else wt$statistic,
+                                          ps$na, ps$nb),
+             effect_type = "rank_biserial")
+      })
+      return(c(global, ph_rows))
+    }
+
+    av = tryCatch(stats::aov(value ~ grp, data = df_in), error = function(e) NULL)
+    sm = if(is.null(av)) NULL else summary(av)[[1]]
+    av_p = if(is.null(sm)) NA_real_ else sm[["Pr(>F)"]][1]
+    av_f = if(is.null(sm)) NA_real_ else sm[["F value"]][1]
+    av_df = if(is.null(sm)) NA_character_ else
+      sprintf("%d,%d", sm[["Df"]][1], sm[["Df"]][2])
+    # Eta-squared: the share of total variance the grouping accounts for.
+    eta = if(is.null(sm)) NA_real_ else
+      sm[["Sum Sq"]][1] / sum(sm[["Sum Sq"]])
+
+    global = list(.row(
+      comp_name, "anova", f, k, NA, NA, NA, NA, NA, NA,
+      statistic = av_f, df = av_df, p_value = av_p,
+      effect_size = eta, effect_type = "eta_squared"))
+
+    # Tukey HSD post-hoc on the aov fit. Its p-values are already adjusted
+    # across the pairs within this feature, and it supplies the interval.
     tk_rows = list()
     if(!is.null(av)){
       tk = tryCatch(stats::TukeyHSD(av), error = function(e) NULL)
       if(!is.null(tk)){
         tk_df = as.data.frame(tk$grp)
         tk_df$pair = rownames(tk_df)
-        tk_rows = lapply(seq_len(nrow(tk_df)), function(k){
-          pr = strsplit(tk_df$pair[k], "-", fixed = TRUE)[[1]]
+        tk_rows = lapply(seq_len(nrow(tk_df)), function(i){
+          pr = strsplit(tk_df$pair[i], "-", fixed = TRUE)[[1]]
           g_a = pr[2]; g_b = pr[1]                  # TukeyHSD label = "B-A"
-          m_a = mean(x[group == g_a], na.rm = TRUE)
-          m_b = mean(x[group == g_b], na.rm = TRUE)
-          fc_pair = suppressWarnings(m_b / m_a)
-          .row(comp_name, "tukey", f, 2, g_a, g_b, m_a, m_b,
+          ps  = pair_stats(x, g_a, g_b)
+          fc_pair = suppressWarnings(ps$mb / ps$ma)
+          .row(comp_name, "tukey", f, 2, g_a, g_b, ps$ma, ps$mb,
                fc_pair, suppressWarnings(log2(fc_pair)),
-               statistic = tk_df$diff[k],
+               statistic = tk_df$diff[i],
                df = NA_character_,
-               p_value = tk_df$`p adj`[k])
+               p_value = tk_df$`p adj`[i],
+               n_g1 = ps$na, n_g2 = ps$nb,
+               n_na_g1 = length(ps$xa) - ps$na,
+               n_na_g2 = length(ps$xb) - ps$nb,
+               mean_diff = tk_df$diff[i],
+               conf_low = tk_df$lwr[i], conf_high = tk_df$upr[i],
+               effect_size = .hedges_g(ps$xa, ps$xb),
+               effect_type = "hedges_g")
         })
       }
     }
@@ -198,7 +509,6 @@ run_stats = function(de, st_params){
 
   dplyr::bind_rows(unlist(rows, recursive = FALSE))
 }
-
 
 # ---- Correlations (pairwise feature x feature) -----------------------------
 
@@ -245,41 +555,80 @@ run_stats = function(de, st_params){
     dplyr::bind_rows(per_subset)
   })
 
-  out = dplyr::bind_rows(rows)
-  if(nrow(out) > 0){
-    out$p_adj       = stats::p.adjust(out$p_value, method = p_adjust)
-    out$significant = out$p_adj < sig_threshold
-  }
+  # One family per named analysis x subset x method: a Pearson and a Spearman
+  # run over the same pairs are two answers to one question, not twice the
+  # multiple testing.
+  out = .adjust_within(dplyr::bind_rows(rows),
+                       c("correlation", "subset", "method"),
+                       p_adjust, sig_threshold)
   out
 }
 
-#' Compute pairwise correlations + vectorized p-values; return long format
-#' (lower triangle; diagonal/self-pairs included only when `include_self = TRUE`).
+#' Pairwise feature correlations in long format
+#'
+#' Returns the lower triangle (plus the diagonal when `include_self = TRUE`),
+#' one row per feature pair.
+#'
+#' Pearson p-values are computed vectorised, from the usual
+#' \eqn{t = r\sqrt{(n-2)/(1-r^2)}}, which is exactly what [stats::cor.test()]
+#' reports.
+#'
+#' Spearman is NOT computed that way. Applying the same formula to a rank
+#' correlation gives the asymptotic approximation that `cor.test()` uses only
+#' when `exact = FALSE`; for the small, untied datasets typical of a targeted
+#' study `cor.test()` defaults to an exact permutation p-value instead, and the
+#' two can differ materially at the sample sizes that matter here. So each
+#' Spearman pair is passed to [stats::cor.test()], which picks exact or
+#' asymptotic by its own rules. That costs one call per pair - a few seconds
+#' for a panel of a few hundred features - and is worth it for p-values that
+#' match what a reader gets when they check one by hand.
+#'
+#' @param X Numeric matrix, samples x features.
+#' @param method `"pearson"` or `"spearman"`.
+#' @param name,sub_lab Labels identifying the analysis and subset.
+#' @param include_self Keep the diagonal (self-correlations).
+#' @return A long data frame: `correlation`, `subset`, `method`, `feature_a`,
+#'   `feature_b`, `n`, `estimate`, `statistic`, `p_value`. `statistic` is the
+#'   t-statistic for Pearson and Spearman's S for Spearman.
 #' @keywords internal
 #' @noRd
 .pairwise_cor_long = function(X, method, name, sub_lab,
                               include_self = FALSE){
 
-  # Pairwise complete-obs correlation matrix
   r_mat = suppressWarnings(stats::cor(X, use = "pairwise.complete.obs",
                                       method = method))
 
-  # Per-pair sample count (handles NA pattern)
+  # Per-pair sample count (handles the NA pattern)
   ok    = !is.na(X)
-  n_mat = crossprod(ok)                               # features x features
+  n_mat = crossprod(ok)
 
-  # Vectorized t-statistic + p-value (valid for Pearson; an asymptotic
-  # approximation for Spearman that matches what cor.test() reports for
-  # large n with `exact = FALSE`).
-  denom = 1 - r_mat^2
-  denom[denom <= 0] = NA_real_
-  t_mat = r_mat * sqrt((n_mat - 2) / denom)
-  p_mat = 2 * stats::pt(-abs(t_mat), df = n_mat - 2)
-  diag(p_mat) = NA_real_                              # self-correlation
-
-  # Lower triangle -> long (omit diagonal / self-pairs unless requested)
   feats = colnames(X)
-  idx = which(lower.tri(r_mat, diag = include_self), arr.ind = TRUE)
+  idx   = which(lower.tri(r_mat, diag = include_self), arr.ind = TRUE)
+
+  if(identical(method, "pearson")){
+    denom = 1 - r_mat^2
+    denom[denom <= 0] = NA_real_
+    t_mat = r_mat * sqrt((n_mat - 2) / denom)
+    p_mat = 2 * stats::pt(-abs(t_mat), df = n_mat - 2)
+    diag(p_mat) = NA_real_
+    stat = t_mat[idx]
+    pval = p_mat[idx]
+  } else {
+    res = vapply(seq_len(nrow(idx)), function(k){
+      i = idx[k, 1]; j = idx[k, 2]
+      if(i == j) return(c(NA_real_, NA_real_))
+      keep = !is.na(X[, i]) & !is.na(X[, j])
+      if(sum(keep) < 3) return(c(NA_real_, NA_real_))
+      ct = tryCatch(suppressWarnings(
+             stats::cor.test(X[keep, i], X[keep, j], method = method)),
+             error = function(e) NULL)
+      if(is.null(ct)) return(c(NA_real_, NA_real_))
+      c(unname(ct$statistic), ct$p.value)
+    }, numeric(2))
+    stat = res[1, ]
+    pval = res[2, ]
+  }
+
   data.frame(
     correlation = name,
     subset      = sub_lab,
@@ -288,12 +637,11 @@ run_stats = function(de, st_params){
     feature_b   = feats[idx[, 2]],
     n           = n_mat[idx],
     estimate    = r_mat[idx],
-    statistic   = t_mat[idx],
-    p_value     = p_mat[idx],
+    statistic   = stat,
+    p_value     = pval,
     stringsAsFactors = FALSE
   )
 }
-
 
 # ---- Linear models ---------------------------------------------------------
 
@@ -344,11 +692,10 @@ run_stats = function(de, st_params){
     dplyr::bind_rows(inner)
   })
 
-  out = dplyr::bind_rows(rows)
-  if(nrow(out) > 0){
-    out$p_adj       = stats::p.adjust(out$p_value, method = p_adjust)
-    out$significant = out$p_adj < sig_threshold
-  }
+  # One family per model term, across features: the question asked of a
+  # treatment coefficient is not the question asked of the intercept.
+  out = .adjust_within(dplyr::bind_rows(rows), c("model", "term"),
+                       p_adjust, sig_threshold)
   out
 }
 
@@ -360,10 +707,14 @@ run_stats = function(de, st_params){
 .empty_stats_df = function() data.frame(
   comparison = character(), method = character(), feature = character(),
   n_groups = integer(), group1 = character(), group2 = character(),
-  mean_g1 = numeric(), mean_g2 = numeric(),
+  n_g1 = integer(), n_g2 = integer(),
+  n_na_g1 = integer(), n_na_g2 = integer(),
+  mean_g1 = numeric(), mean_g2 = numeric(), mean_diff = numeric(),
   FC = numeric(), log2FC = numeric(),
   statistic = numeric(), df = character(),
-  p_value = numeric(), p_adj = numeric(), significant = logical(),
+  p_value = numeric(), conf_low = numeric(), conf_high = numeric(),
+  effect_size = numeric(), effect_type = character(),
+  p_adj = numeric(), significant = logical(), adjust_family = character(),
   stringsAsFactors = FALSE
 )
 
@@ -374,6 +725,7 @@ run_stats = function(de, st_params){
   feature_a = character(), feature_b = character(), n = integer(),
   estimate = numeric(), statistic = numeric(),
   p_value = numeric(), p_adj = numeric(), significant = logical(),
+  adjust_family = character(),
   stringsAsFactors = FALSE
 )
 
@@ -384,6 +736,7 @@ run_stats = function(de, st_params){
   term = character(), term_raw = character(),
   estimate = numeric(), std_error = numeric(), statistic = numeric(),
   p_value = numeric(), p_adj = numeric(), significant = logical(),
+  adjust_family = character(),
   stringsAsFactors = FALSE
 )
 
@@ -465,18 +818,29 @@ run_stats = function(de, st_params){
 #' @noRd
 .row = function(comp_name, method, feature, n_groups,
                 group1, group2, mean_g1, mean_g2, FC, log2FC,
-                statistic, df, p_value){
+                statistic, df, p_value,
+                n_g1 = NA_integer_, n_g2 = NA_integer_,
+                n_na_g1 = NA_integer_, n_na_g2 = NA_integer_,
+                mean_diff = NA_real_,
+                conf_low = NA_real_, conf_high = NA_real_,
+                effect_size = NA_real_, effect_type = NA_character_){
   data.frame(
     comparison = comp_name, method = method, feature = feature,
     n_groups = as.integer(n_groups),
     group1 = as.character(group1), group2 = as.character(group2),
+    n_g1 = as.integer(n_g1), n_g2 = as.integer(n_g2),
+    n_na_g1 = as.integer(n_na_g1), n_na_g2 = as.integer(n_na_g2),
     mean_g1 = as.numeric(mean_g1), mean_g2 = as.numeric(mean_g2),
+    mean_diff = as.numeric(mean_diff),
     FC = as.numeric(FC),
     log2FC = as.numeric(log2FC),
     statistic = as.numeric(statistic),
     df = as.character(df),
     p_value = as.numeric(p_value),
-    p_adj = NA_real_, significant = NA,
+    conf_low = as.numeric(conf_low), conf_high = as.numeric(conf_high),
+    effect_size = as.numeric(effect_size),
+    effect_type = as.character(effect_type),
+    p_adj = NA_real_, significant = NA, adjust_family = NA_character_,
     stringsAsFactors = FALSE
   )
 }

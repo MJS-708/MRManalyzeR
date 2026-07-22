@@ -20,7 +20,7 @@ plot_volcano(
 present, and errors if the table holds more than one.}
 
 \item{pair}{For post-hoc rows, the group pair as `"A vs B"`. `NULL` uses the
-`t_test` rows.}
+two-group test rows.}
 
 \item{use_adjusted}{Plot BH-adjusted p on the y-axis instead of raw p.}
 
@@ -41,11 +41,12 @@ The compounds worth attention sit in the upper corners.
 }
 \details{
 Rows are taken from the `stats` table returned by [run_stats()], so the plot
-and the `stats` sheet of the output xlsx are the same numbers. Only
-`t_test` and `tukey` rows carry a fold change, so those are the eligible
-methods: a two-level comparison contributes its t-test row directly, while a
-three-or-more-level comparison contributes one volcano per Tukey pair -
-select the pair with `pair`.
+and the `stats` sheet of the output xlsx are the same numbers. Only rows
+carrying a fold change are eligible, which excludes the global tests
+(`anova`, `kruskal`) - they ask whether *any* group differs and have no
+direction. A two-level comparison contributes its single test row; a
+three-or-more-level comparison contributes one volcano per post-hoc pair,
+selected with `pair`.
 
 Every significant feature is labelled, up to `top_n_label`; beyond that the
 most significant are kept, since a volcano labelled with eighty compounds
@@ -56,7 +57,7 @@ de <- load_dataset(system.file("extdata", "example_synthetic.RDS",
                                package = "MRManalyzeR"))
 de <- subset_dataset(de, conditions = list(Sample_type = "Sample"))
 params <- list(comparisons = list(enabled = TRUE, entries = list(
-  list(name = "PBS_vs_HDM",
+  list(name = "PBS_vs_HDM", method = "welch",
        compare = list(factor = "Treatment",
                       levels = c("PBS", "HDM"))))))
 st <- run_stats(de, params)

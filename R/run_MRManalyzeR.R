@@ -52,6 +52,18 @@ run_MRManalyzeR = function(path_yaml){
   # --- Load & unpack YAML -------------------------------------------------
   project_params = load_config(path_yaml)
 
+  # Fail early, and once. A structural mistake in the config would otherwise
+  # surface as an obscure error somewhere in processing or report rendering,
+  # after minutes of work, with only the first problem visible.
+  cfg_check = validate_config(project_params)
+  if(length(cfg_check$errors))
+    stop("[run_MRManalyzeR] configuration is not valid:
+",
+         paste0("  - ", cfg_check$errors, collapse = "
+"),
+         call. = FALSE)
+  for(w in cfg_check$warnings) message("[validate_config] ", w)
+
   project_paths = project_params$project$paths
   pmp_params    = project_params$project$PeakMatrixProcessing
 
@@ -223,30 +235,63 @@ run_MRManalyzeR = function(path_yaml){
   # with certain styling/drawing XML, and are also faster.
   fdata    = openxlsx::read.xlsx(xlsx_path, sheet = "feature_metadata")
   metadata = openxlsx::read.xlsx(xlsx_path, sheet = "sample_metadata")
-  if(!include_col %in% colnames(metadata))
-    stop(sprintf("[run_MRManalyzeR] sample_metadata has no '%s' column (PeakMatrixProcessing.include_col).", include_col))
+
+  # Check the workbook before anything reads it. Every problem is reported at
+  # once: a duplicated sample name and a text value in a measurement column
+  # are both worth knowing about before a ten-minute run, not one after the
+  # other across three attempts.
+  in_check = validate_input(fdata, metadata,
+                            name_col            = name_col,
+                            compound_col        = compound_col,
+                            processing_name_col = processing_name_col,
+                            report_col          = report_col,
+                            include_col         = include_col)
+  if(length(in_check$errors))
+    stop("[run_MRManalyzeR] input workbook is not valid:
+",
+         paste0("  - ", in_check$errors, collapse = "
+"), call. = FALSE)
+  for(w in in_check$warnings) message("[validate_input] ", w)
+
   metadata = metadata[which(metadata[[include_col]] == include_value), , drop = FALSE]
 
   # Data source is selected by two mutually-exclusive nested blocks, each
   # with its own `enabled:` toggle and source-specific params:
   #   skyline_data: { enabled, data_tab_names, signal_filter }   # LOD/LOQ
   #   tl_data:      { enabled, data_tab_names, tl_headers, snr }  # SNR
+  #   matrix_data:  { enabled, data_tab_names, id_col, orientation,
+  #                   signal_filter }                             # LOD/LOQ
   # Exactly one must be enabled.
   sky = pmp_params$skyline_data %||% list()
   tl  = pmp_params$tl_data      %||% list()
-  sky_on = isTRUE(sky$enabled)
-  tl_on  = isTRUE(tl$enabled)
-  if(sky_on && tl_on)
-    stop("[run_MRManalyzeR] Both 'skyline_data' and 'tl_data' are enabled under PeakMatrixProcessing - enable exactly one.")
-  if(!sky_on && !tl_on)
-    stop("[run_MRManalyzeR] Neither 'skyline_data' nor 'tl_data' is enabled under PeakMatrixProcessing - enable exactly one.")
+  mx  = pmp_params$matrix_data  %||% list()
+  on  = c(skyline_data = isTRUE(sky$enabled),
+          tl_data      = isTRUE(tl$enabled),
+          matrix_data  = isTRUE(mx$enabled))
+  if(sum(on) != 1)
+    stop(sprintf(
+      "[run_MRManalyzeR] %d data sources enabled under PeakMatrixProcessing (%s) - enable exactly one.",
+      sum(on), paste(names(on), collapse = ", ")))
 
-  if(sky_on){
+  matrix_id_col      = NULL
+  matrix_orientation = "samples_rows"
+
+  if(on[["skyline_data"]]){
     data_source    = "skyline"
     data_tab_names = sky$data_tab_names %||% "skyline_data"
     signal_filter  = sky$signal_filter %||% FALSE   # LOD | LOQ | False
     snr            = FALSE
     tl_headers     = NULL
+  } else if(on[["matrix_data"]]){
+    # Vendor-neutral: any software that exports a rectangular
+    # sample x analyte table, with no format-specific parsing.
+    data_source        = "matrix"
+    data_tab_names     = mx$data_tab_names %||% "matrix_data"
+    signal_filter      = mx$signal_filter  %||% FALSE  # LOD | LOQ | False
+    snr                = FALSE
+    tl_headers         = NULL
+    matrix_id_col      = mx$id_col
+    matrix_orientation = mx$orientation %||% "samples_rows"
   } else {
     data_source    = "targetlynx"
     data_tab_names = tl$data_tab_names               # NULL => extractTable greps "lcms_data"
@@ -277,6 +322,14 @@ run_MRManalyzeR = function(path_yaml){
     bc_qc_label      = pmp_params$bc_qc_label,
     bc_factor_name   = pmp_params$bc_factor_name,
     bc_header        = pmp_params$bc_header,
+    processing_batch = pmp_params$processing_batch,
+    matrix_id_col      = matrix_id_col,
+    matrix_orientation = matrix_orientation,
+    # Lets correct_batch() test whether batch is confounded with the study
+    # factor, which is the assumption a non-QC reference rests on.
+    bc_check_factor  = pmp_params$bc_check_factor %||%
+                         (project_params$project$stats_report %||%
+                          list())$global_summary_factor,
     blank_head       = pmp_params$blank_head,
     blank_name       = pmp_params$blank_name,
     normalize        = pmp_params$normalize,
@@ -298,6 +351,27 @@ run_MRManalyzeR = function(path_yaml){
 
   combined_datamatrices = combined_data[[1]]
   removed_features      = combined_data[[2]]
+
+  # Design checks need the data and the config together, so they run here
+  # rather than at load time. These are warnings by default: a thin group or a
+  # batch without QCs is a judgement call, not a malformed input - except
+  # complete confounding, which validate_design() reports as an error.
+  dz_check = tryCatch(
+    validate_design(combined_datamatrices, project_params,
+                    sample_type_head = (project_params$project$data_quality_report %||%
+                                        list())$sample_type_head %||% "Sample_type",
+                    qc_label   = (project_params$project$data_quality_report %||%
+                                  list())$qc_label %||% "QC",
+                    blank_name = pmp_params$blank_name %||% "Blank",
+                    batch_head = pmp_params$bc_header  %||% "Chrom_Batch"),
+    error = function(e){
+      warning("[run_MRManalyzeR] design validation skipped: ",
+              conditionMessage(e)); NULL
+    })
+  if(!is.null(dz_check)){
+    for(w in dz_check$warnings) message("[validate_design] ", w)
+    for(e in dz_check$errors)   warning("[validate_design] ", e)
+  }
 
   scale_fac = pmp_params$scale_fac %||% 1
   combined_datamatrices$data = combined_datamatrices$data * scale_fac
@@ -540,7 +614,8 @@ run_MRManalyzeR_combine = function(path_yaml){
     sample_id_col       = combine_params$sample_id_col   %||% "Sample_ID",
     drop_samples        = combine_params$drop_samples,
     prefix_features     = combine_params$prefix_features %||% FALSE,
-    combined_name       = combine_params$combined_name   %||% basename(output_stub)
+    combined_name       = combine_params$combined_name   %||% basename(output_stub),
+    duplicate_samples   = combine_params$duplicate_samples %||% "error"
   )
   message(sprintf("[combine] Result: %d samples x %d features.",
                   nrow(combined$data), ncol(combined$data)))

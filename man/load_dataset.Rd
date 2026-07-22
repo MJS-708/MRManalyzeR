@@ -40,7 +40,11 @@ Other data parse:
 \code{\link[=assemble_dataset]{assemble_dataset()}},
 \code{\link[=combine_datasets]{combine_datasets()}},
 \code{\link[=load_config]{load_config()}},
+\code{\link[=read_peak_matrix]{read_peak_matrix()}},
 \code{\link[=read_skyline]{read_skyline()}},
-\code{\link[=read_targetlynx]{read_targetlynx()}}
+\code{\link[=read_targetlynx]{read_targetlynx()}},
+\code{\link[=validate_config]{validate_config()}},
+\code{\link[=validate_design]{validate_design()}},
+\code{\link[=validate_input]{validate_input()}}
 }
 \concept{data parse}

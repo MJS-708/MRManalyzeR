@@ -22,8 +22,10 @@
 #'   `bc_factor_name`, `blank_head`.
 #' @param xlsx_path Path to the source workbook (read by [read_targetlynx()]
 #'   or [read_skyline()]).
-#' @param data_source `"targetlynx"` (default) or `"skyline"` - selects
-#'   which raw-matrix reader to use.
+#' @param data_source `"targetlynx"` (default), `"skyline"` or `"matrix"` -
+#'   selects the reader. `"matrix"` is the vendor-neutral route via
+#'   [read_peak_matrix()]: any software that can export a rectangular
+#'   sample x analyte table can be used without a dedicated parser.
 #' @param data_tab_names Sheet name(s) holding the Skyline molecule x sample
 #'   matrix; only used when `data_source = "skyline"`. Multiple names are
 #'   treated as separate acquisition batches and row-bound together - see
@@ -42,8 +44,27 @@
 #' @param blank_filter Blank-filter factor; `FALSE` to skip.
 #' @param replace_MVs Scalar passed to [`impute_missing()`]; `FALSE` to skip.
 #' @param batch_correction Logical.
-#' @param bc_qc_label,bc_factor_name,bc_header Batch-correction parameters.
-#' @param blank_head,blank_name Metadata column and value identifying blanks.
+#' @param bc_qc_label,bc_factor_name,bc_header Batch-correction parameters:
+#'   the reference-sample label, the column holding it, and the batch column.
+#'   Defaults to pooled QCs, which are the only reference guaranteed not to
+#'   differ between batches for biological reasons - see [correct_batch()].
+#' @param bc_check_factor Optional study factor; when given, `correct_batch()`
+#'   warns if batch is confounded with it.
+#' @param matrix_id_col,matrix_orientation Passed to [read_peak_matrix()] when
+#'   `data_source = "matrix"`: the sample-identifier column (`NULL` = first)
+#'   and whether samples are rows or columns.
+#' @param processing_batch `sample_meta` column used to partition the *per-batch
+#'   processing* - blank filtering, normalisation, concentration adjustment and
+#'   imputation are each applied within a partition, so blanks and per-feature
+#'   minima are taken from the same acquisition as the samples they apply to.
+#'   `NULL` (default) reuses `bc_header`, which is what earlier versions did
+#'   implicitly; `FALSE` processes every sample together. This is a separate
+#'   question from which column defines the batch-correction reference, even
+#'   when the same column answers both.
+#' @param blank_head,blank_name `sample_meta` column and value identifying
+#'   blank injections. The defaults are the canonical names this package
+#'   documents (`Sample_type` / `Blank`), not a particular laboratory's sheet -
+#'   set them to whatever your workbook uses.
 #' @param normalize Metadata column used as divisor, or `FALSE`.
 #' @param adjust_conc Logical master toggle for concentration adjustment via
 #'   [adjust_concentration()], using `sample_vol_col`, `cal_vol_col`,
@@ -70,8 +91,10 @@
 #'   `"Report"` / `"YES"`.
 #' @param comment_col `feature_metadata` column used to record why a feature
 #'   was excluded. Default `"Comment"`.
-#' @return A list: `[[1]]` the `DatasetExperiment`, `[[2]]` a data frame of
-#'   removed features.
+#' @return A named list with `dataset` (the `DatasetExperiment`) and
+#'   `excluded_features` (a data frame of features dropped along the way, with
+#'   the reason recorded). The elements stay in that order, so existing code
+#'   indexing `[[1]]` and `[[2]]` keeps working.
 #' @examples
 #' xlsx  <- system.file("extdata", "example_data.xlsx", package = "MRManalyzeR")
 #' fdata <- openxlsx::read.xlsx(xlsx, sheet = "feature_metadata")
@@ -97,11 +120,15 @@ process_dataset = function(fdata,
                               blank_filter = 5,
                               replace_MVs = FALSE,
                               batch_correction = FALSE,
-                              bc_qc_label = "Sample",
+                              bc_qc_label = "QC",
                               bc_factor_name = "Sample_type",
-                              bc_header = "extract_batch",
-                              blank_head = "Sample_type1",
-                              blank_name = "ExtractBlank",
+                              bc_header = "Chrom_Batch",
+                              bc_check_factor = NULL,
+                              processing_batch = NULL,
+                              matrix_id_col = NULL,
+                              matrix_orientation = "samples_rows",
+                              blank_head = "Sample_type",
+                              blank_name = "Blank",
                               normalize = FALSE,
                               adjust_conc = FALSE,
                               starting_vol_col = FALSE,
@@ -137,8 +164,8 @@ process_dataset = function(fdata,
                                    as.character(report_value), "YES", "NO")
   if(comment_col %in% colnames(fdata)) fdata$Comment = fdata[[comment_col]]
 
-  if(!identical(data_source, "targetlynx") && !identical(data_source, "skyline"))
-    stop("[process_dataset] data_source must be 'targetlynx' or 'skyline'.")
+  if(!data_source %in% c("targetlynx", "skyline", "matrix"))
+    stop("[process_dataset] data_source must be 'targetlynx', 'skyline' or 'matrix'.")
 
   # Backwards compatibility: YAMLs that only set `snr:` (no `signal_filter:`)
   # keep working unchanged - infer the filter mode from `snr`.
@@ -151,9 +178,10 @@ process_dataset = function(fdata,
   if(identical(signal_filter, "SNR") && identical(data_source, "skyline"))
     stop("[process_dataset] signal_filter='SNR' requires per-injection S/N values, which are not available for data_source='skyline'. Use signal_filter='LOD' or 'LOQ' instead.")
 
-  if(signal_filter %in% c("LOD", "LOQ") && !identical(data_source, "skyline"))
+  if(signal_filter %in% c("LOD", "LOQ") &&
+     !data_source %in% c("skyline", "matrix"))
     stop(sprintf(
-      "[process_dataset] signal_filter='%s' is only supported for data_source='skyline'. For data_source='targetlynx', use signal_filter='SNR'.",
+      "[process_dataset] signal_filter='%s' needs a per-compound threshold and is supported for data_source='skyline' or 'matrix'. For 'targetlynx', use signal_filter='SNR'.",
       signal_filter))
 
   if(signal_filter %in% c("LOD", "LOQ") && !signal_filter %in% colnames(fdata))
@@ -184,13 +212,28 @@ process_dataset = function(fdata,
     out_table = out_table[rownames(out_table) %in% snames,
                           colnames(out_table) %in% fnames, drop = FALSE]
 
-  } else {   # data_source == "skyline"
+  } else if(identical(data_source, "skyline")){
 
     if(is.null(xlsx_path))
       stop("[process_dataset] xlsx_path is required when data_source='skyline'.")
 
     out_table = read_skyline(xlsx_path, data_tab_names, fdata,
                              signal_filter = if(signal_filter %in% c("LOD", "LOQ")) signal_filter else FALSE)
+    out_table = out_table[rownames(out_table) %in% snames, , drop = FALSE]
+
+  } else {   # data_source == "matrix"
+
+    if(is.null(xlsx_path))
+      stop("[process_dataset] xlsx_path is required when data_source='matrix'.")
+
+    out_table = read_peak_matrix(xlsx_path, data_tab_names,
+                                 id_col      = matrix_id_col,
+                                 orientation = matrix_orientation)
+    # A generic matrix carries no S/N, but it may still have a per-compound
+    # LOD/LOQ in feature_metadata, so the same mask applies.
+    if(signal_filter %in% c("LOD", "LOQ"))
+      out_table = .apply_lod_loq_mask(out_table, fdata,
+                                      floor_col = signal_filter)
     out_table = out_table[rownames(out_table) %in% snames, , drop = FALSE]
   }
 
@@ -237,12 +280,26 @@ process_dataset = function(fdata,
   # --- Per-batch processing ----------------------------------------------
   meta_yes = metadata[which(metadata[[include_col]] == include_value), , drop = FALSE]
 
-  # Fail loud and early if bc_header is misconfigured - silent fallback
-  # would mask YAML typos and produce an empty downstream matrix.
-  if(is.null(bc_header) || isFALSE(bc_header) ||
-     !bc_header %in% colnames(meta_yes)){
+  # `bc_header` names the batch-correction column, but historically it also
+  # silently partitioned every processing step. Those are different questions,
+  # so `processing_batch` now asks the second one explicitly - defaulting to
+  # bc_header, which preserves the previous behaviour.
+  proc_batch = if(is.null(processing_batch)) bc_header else processing_batch
+
+  if(!isFALSE(proc_batch) &&
+     (is.null(proc_batch) || !proc_batch %in% colnames(meta_yes))){
     stop(sprintf(
-      "bc_header='%s' is not a column in sample_metadata. Fix the YAML 'bc_header:' to match an existing sample_metadata column (got: %s).",
+      "processing_batch='%s' is not a column in sample_metadata. Set it to an existing column, or to False to process every sample together (got: %s).",
+      proc_batch %||% "<NULL>",
+      paste(colnames(meta_yes), collapse = ", ")))
+  }
+
+  # The correction column is only needed if correction is actually requested.
+  if(isTRUE(batch_correction) &&
+     (is.null(bc_header) || isFALSE(bc_header) ||
+      !bc_header %in% colnames(meta_yes))){
+    stop(sprintf(
+      "batch_correction is TRUE but bc_header='%s' is not a column in sample_metadata (got: %s).",
       bc_header %||% "<NULL>",
       paste(colnames(meta_yes), collapse = ", ")))
   }
@@ -252,7 +309,7 @@ process_dataset = function(fdata,
   # dataset object (data + sample_meta together) rather than a bare matrix.
   if(nrow(out_table) == 0 || ncol(out_table) == 0){
     stop(sprintf(
-      "[process_dataset] Empty matrix after reading (%d samples x %d features). Check: bc_header column, blank/signal filters, and that the source data actually contains data for the included samples.",
+      "[process_dataset] Empty matrix after reading (%d samples x %d features). Check: processing_batch column, blank/signal filters, and that the source data actually contains data for the included samples.",
       nrow(out_table), ncol(out_table)))
   }
   lcms_experiment = assemble_dataset(out_table, fdata, metadata, name_col = name_col)
@@ -261,7 +318,9 @@ process_dataset = function(fdata,
   # cryosectioned) as a single "_unbatched_" group so they survive the
   # per-batch split instead of being silently dropped via `NA == "x"`.
   # Computed locally: the dataset's own sample_meta keeps the original values.
-  bc_vec = as.character(as.data.frame(lcms_experiment$sample_meta)[[bc_header]])
+  bc_vec = if(isFALSE(proc_batch))
+    rep("_all_", nrow(as.data.frame(lcms_experiment$data))) else
+    as.character(as.data.frame(lcms_experiment$sample_meta)[[proc_batch]])
   bc_vec[is.na(bc_vec) | !nzchar(bc_vec)] = "_unbatched_"
   batches = unique(bc_vec)
 
@@ -305,8 +364,9 @@ process_dataset = function(fdata,
 
   if(isTRUE(batch_correction))
     lcms_experiment = correct_batch(lcms_experiment,
-                                    qc_label    = bc_qc_label,
-                                    factor_name = bc_factor_name,
+                                    qc_label     = bc_qc_label,
+                                    check_factor = bc_check_factor,
+                                    factor_name  = bc_factor_name,
                                     batch_head  = bc_header)
 
   # --- Record removed features -------------------------------------------
@@ -348,7 +408,8 @@ process_dataset = function(fdata,
     message("  (both groups listed in 'Compounds excluded' in the QC report)\n")
   }
 
-  list(lcms_experiment, removed_features)
+  # Named, but the order is unchanged so out[[1]] / out[[2]] still work.
+  list(dataset = lcms_experiment, excluded_features = removed_features)
 }
 
 
@@ -362,8 +423,15 @@ process_dataset = function(fdata,
     dplyr::select(ID, Name, dplyr::all_of(datatype)) %>%
     dplyr::distinct() %>%
     dplyr::mutate(dplyr::across(dplyr::all_of(datatype), as.numeric)) %>%
+    # values_fill = NA, not 0. A sample x compound pair with no row in the
+    # export was not measured as zero - it was not reported at all, whether
+    # because the transition was not acquired, the peak was not integrated, or
+    # the row was dropped from the export. Filling with 0 makes those absences
+    # indistinguishable from a genuine zero and lets them behave as real
+    # measurements in blank filtering, normalisation and concentration
+    # adjustment, which all run before any imputation step.
     tidyr::pivot_wider(names_from = "ID", values_from = datatype,
-                       id_cols = "Name", values_fill = 0) %>%
+                       id_cols = "Name", values_fill = NA_real_) %>%
     tibble::column_to_rownames("Name")
 }
 

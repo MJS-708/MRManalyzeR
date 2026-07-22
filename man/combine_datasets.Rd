@@ -14,7 +14,8 @@ combine_datasets(
   sample_id_col = "Sample_ID",
   drop_samples = NULL,
   prefix_features = FALSE,
-  combined_name = "combined"
+  combined_name = "combined",
+  duplicate_samples = c("error", "first", "mean", "median")
 )
 }
 \arguments{
@@ -55,6 +56,13 @@ datasets are combined, so `"auto"` is not stable across different combine
 runs.}
 
 \item{combined_name}{Name attribute of the resulting `DatasetExperiment`.}
+
+\item{duplicate_samples}{What to do when a dataset holds more than one row
+with the same `sample_id_col`. `"error"` (default) stops and names them;
+`"first"` keeps the first occurrence; `"mean"` or `"median"` aggregate the
+measurements, taking metadata from the first row. A duplicate is either a
+deliberate re-injection or a data-entry error and those want opposite
+treatment, so the caller decides rather than the package.}
 }
 \value{
 A single `struct::DatasetExperiment` containing the merged data.
@@ -92,7 +100,11 @@ Other data parse:
 \code{\link[=assemble_dataset]{assemble_dataset()}},
 \code{\link[=load_config]{load_config()}},
 \code{\link[=load_dataset]{load_dataset()}},
+\code{\link[=read_peak_matrix]{read_peak_matrix()}},
 \code{\link[=read_skyline]{read_skyline()}},
-\code{\link[=read_targetlynx]{read_targetlynx()}}
+\code{\link[=read_targetlynx]{read_targetlynx()}},
+\code{\link[=validate_config]{validate_config()}},
+\code{\link[=validate_design]{validate_design()}},
+\code{\link[=validate_input]{validate_input()}}
 }
 \concept{data parse}

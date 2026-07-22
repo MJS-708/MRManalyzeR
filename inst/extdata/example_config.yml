@@ -40,6 +40,12 @@ project: &general
       data_tab_names: [lcms_data]         # TargetLynx sheet(s); omit to auto-match 'lcms_data*'
       tl_headers: ["ID", "Name","Area", "ng/mL", "Response",  "S/N"]
       snr: 3                              # S/N threshold | False
+    matrix_data:                          # vendor-neutral: any sample x analyte table
+      enabled: False
+      data_tab_names: [matrix_data]       # sheet(s) holding the matrix
+      id_col: ~                           # ~ = first column holds sample names
+      orientation: samples_rows           # samples_rows | samples_cols
+      signal_filter: False                # LOD | LOQ | False (needs the column in feature_metadata)
 
     # 4. Blank filter
     blank_filter: False                   # nx > blank median | False
@@ -63,9 +69,13 @@ project: &general
 
     # 8. Batch correction
     batch_correction: False               # equalise batch medians
-    bc_qc_label: "Sample"                 # reference samples (ideally QCs)
+    bc_qc_label: "Sample"                 # QC | Sample - QCs are safest; Sample assumes
+                                          # the design is balanced across batches
+    bc_check_factor: ~                   # study factor; warns if batch is confounded with it
     bc_factor_name: "Sample_type"         # column holding bc_qc_label
     bc_header: "Chrom_Batch"              # batch-label column
+    processing_batch: ~                  # ~ = use bc_header (as before) | column | False
+                                         # partitions blank filter / normalise / adjust / impute
 
     # 9. Output
     scale_fac: 1                          # multiply outputs (e.g. 1000: ng/mL -> pg/mL)
@@ -74,6 +84,13 @@ project: &general
   # ===================== DATA QUALITY REPORT =====================
   data_quality_report:
     execute: True
+
+    # -- colours (shared by every plot in this report) --
+    colours:
+      qualitative: hat                    # hat | reading | heatmap0 - group / class colours
+                                          # hat order: blue, red, green, yellow, black,
+                                          # purple, then orange, crimson, teal, light green
+      diverging:   heatmap2               # heatmap2 | heatmap0 - z-scores and correlations
 
     # -- general figure pars--
     fig_scale: 1                          # plot size multiplier
@@ -115,6 +132,13 @@ project: &general
   stats_report:
     execute: True
 
+    # -- colours (shared by every plot in this report) --
+    colours:
+      qualitative: hat                    # hat | reading | heatmap0 - group / class colours
+                                          # hat order: blue, red, green, yellow, black,
+                                          # purple, then orange, crimson, teal, light green
+      diverging:   heatmap2               # heatmap2 | heatmap0 - z-scores and correlations
+
     # -- general figure pars--
     fig_scale: 1                          # plot size multiplier
     interactive_plots: True               # hover tooltips | False = png
@@ -131,16 +155,24 @@ project: &general
     p_adjust: BH                          # BH (=fdr) | bonferroni
     sig_threshold: 0.05
 
-    # -- comparisons  (2 level = t/Wilcoxon || 3+ = ANOVA/Kruskal + post-hoc) --
+    # -- comparisons  (method: is pre-specified per entry; see below) --
     comparisons:
       enabled: True
       entries:
         - name: Ctrl_vs_HDM_in_WT
+          method: welch                 # welch | student | wilcoxon (2 groups)
           subset: { Type: WT }
           compare: { factor: Treatment, levels: [PBS, HDM] }
         - name: Ctrl_vs_HDM_in_KO
+          method: welch                 # welch | student | wilcoxon (2 groups)
           subset: { Type: KO }
           compare: { factor: Treatment, levels: [PBS, HDM] }
+        # Paired designs (pre/post, matched tissues, same animal twice):
+        # - name: pre_vs_post
+        #   method: welch
+        #   paired: true
+        #   subject: Animal_ID          # column linking the two observations
+        #   compare: { factor: TimePoint, levels: [pre, post] }
 
     # -- boxplot  (per-compound by factor(s)) --
     boxplot:

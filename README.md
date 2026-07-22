@@ -1,30 +1,39 @@
 # MRManalyzeR
 
-Process and analyse targeted lipidomics / metabolomics data exported from
-Waters TargetLynx. Reads the TargetLynx xlsx workbook, builds a peak-area
-or concentration matrix (with optional SNR filtering, blank filtering,
-missing-value imputation, normalisation and batch correction) and renders
-self-contained HTML reports for data quality and statistical inference.
-Driven from a single YAML config — no driver script needed.
+Reproducible post-acquisition processing of targeted LC-MS/MS metabolomics
+and lipidomics results exported from Waters TargetLynx or Skyline. It reads
+the quantitative result tables, integrates feature and sample metadata,
+applies configurable quality-control and matrix-processing steps, and produces
+an analysis-ready Bioconductor object plus self-contained HTML reports for data
+quality and statistics. Driven from a single YAML config — no driver script
+needed.
 
-Primarily for internal use at the Wheelock lab, Karolinska Institutet
-(Sweden).
+It does **not** perform chromatographic peak detection, integration or
+calibration-curve fitting from raw mass-spectrometry data: it starts where the
+vendor software finishes.
+
+MRManalyzeR was developed around targeted LC-MS/MS workflows at the Wheelock
+lab, Karolinska Institutet, and supports configurable metadata schemas for use
+in other laboratories.
 
 ---
 
 ## Installation
 
-### Bioconductor dependencies (do this first)
+### Bioconductor dependency (do this first)
 
-`MRManalyzeR` depends on three Bioconductor packages (`struct`,
-`structToolbox`, `pmp`) that aren't on CRAN, so `install_github()` /
-`devtools::install()` cannot pull them automatically. Install them once:
+`MRManalyzeR` depends on `struct`, which is on Bioconductor rather than CRAN,
+so `install_github()` / `devtools::install()` cannot pull it automatically.
+Install it once:
 
 ```r
 if(!requireNamespace("BiocManager", quietly = TRUE))
   install.packages("BiocManager")
-BiocManager::install(c("struct", "structToolbox", "pmp"))
+BiocManager::install("struct")
 ```
+
+(`structToolbox` and `pmp` are **not** required. Earlier versions of this
+README listed them; they are no longer used.)
 
 ### Latest release
 

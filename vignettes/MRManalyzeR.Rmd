@@ -107,6 +107,17 @@ spreadsheet -- `run_stats()`, `summarise_groups()` and `add_cv_metrics()`
 compute once, the `plot_*()` functions consume. A figure and the sheet beside
 it cannot disagree.
 
+Each plot is an exported function rather than code buried in a report
+template, and that is deliberate. Most users will never call one: the YAML
+route renders both reports and the figures appear. But when a figure needs to
+go into a paper with different labels, or one compound needs looking at on its
+own, or a reviewer asks for the same plot on a subset, the choice should not be
+between editing an R Markdown template and starting from the raw matrix.
+`plot_volcano(st, "PBS_vs_HDM")` is one line, takes the objects the workflow
+already produced, and returns an ordinary `ggplot` you can add layers to,
+restyle or save. The reports call exactly the same functions, so what you get
+interactively is what the report shows.
+
 # Installation
 
 ```{r install, eval = FALSE}
@@ -608,6 +619,7 @@ params <- list(
   sig_threshold = 0.05,
   comparisons = list(enabled = TRUE, entries = list(
     list(name    = "PBS_vs_HDM",
+         method  = "welch",
          compare = list(factor = "Treatment",
                         levels = c("PBS", "HDM"))))),
   ion_ratios = list(enabled = TRUE, ratios = list(
@@ -621,7 +633,7 @@ Because the effects in this dataset were planted, the recovered fold changes
 can be checked against the truth:
 
 ```{r stats-truth}
-tt <- st$stats[st$stats$method == "t_test",
+tt <- st$stats[st$stats$method == "welch",
                c("feature", "log2FC", "p_value", "p_adj")]
 truth <- as.data.frame(syn$variable_meta)[, c("Compound",
                                               "Simulated_log2FC")]

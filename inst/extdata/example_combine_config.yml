@@ -48,6 +48,8 @@ combine:
   sample_meta_cols:  ~     # narrow/re-order sample cols, e.g. [Sample_ID, Treatment, Sex]
   sample_id_col: Sample_ID # column matched across datasets
   drop_samples: []         # Sample_IDs to exclude from the merge
+  duplicate_samples: error # error | first | mean | median - what to do when a
+                           # dataset holds the same Sample_ID more than once
   prefix_features: True    # tag feature names (e.g. GOM__PGE2) to avoid collisions
 
   # -- output --
@@ -59,6 +61,11 @@ combine:
 # Same schema as the standard MRManalyzeR stats_report block.
 stats_report:
   execute: True
+
+  # -- colours (shared by every plot in this report) --
+  colours:
+    qualitative: hat                    # hat | reading | heatmap0
+    diverging:   heatmap2               # heatmap2 | heatmap0
 
   # -- general figure pars--
   fig_scale: 1                          # plot size multiplier
@@ -76,11 +83,12 @@ stats_report:
   p_adjust: BH                          # BH (=fdr) | bonferroni
   sig_threshold: 0.05
 
-  # -- comparisons  (2 level = t/Wilcoxon || 3+ = ANOVA/Kruskal + post-hoc) --
+  # -- comparisons  (method: is pre-specified per entry; see below) --
   comparisons:
     enabled: True
     entries:
       - name: Ctrl_vs_HDM
+        method: welch                 # welch | student | wilcoxon (2 groups)
         compare: { factor: Treatment, levels: [Ctrl, HDM_Curdlan] }
 
   # -- boxplot  (per-compound by factor(s)) --

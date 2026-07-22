@@ -132,9 +132,7 @@ plot_correlation = function(correlations, variable_meta = NULL,
   p = ggplot2::ggplot(long, ggplot2::aes(.data$feature_a, .data$feature_b,
                                          fill = .data$r)) +
     ggplot2::geom_tile(color = "white", linewidth = 0.1) +
-    ggplot2::scale_fill_gradient2(low  = .ltc$heatmap2[5],
-                                  mid  = .ltc$heatmap2[3],
-                                  high = .ltc$heatmap2[1], midpoint = 0,
+    ggplot2::scale_fill_gradientn(colours = .diverging_pal(101),
                                   limits = c(-1, 1), na.value = "grey90") +
     ggplot2::scale_x_discrete(labels = blank, drop = FALSE,
                               na.translate = FALSE) +

@@ -17,11 +17,15 @@ process_dataset(
   blank_filter = 5,
   replace_MVs = FALSE,
   batch_correction = FALSE,
-  bc_qc_label = "Sample",
+  bc_qc_label = "QC",
   bc_factor_name = "Sample_type",
-  bc_header = "extract_batch",
-  blank_head = "Sample_type1",
-  blank_name = "ExtractBlank",
+  bc_header = "Chrom_Batch",
+  bc_check_factor = NULL,
+  processing_batch = NULL,
+  matrix_id_col = NULL,
+  matrix_orientation = "samples_rows",
+  blank_head = "Sample_type",
+  blank_name = "Blank",
   normalize = FALSE,
   adjust_conc = FALSE,
   starting_vol_col = FALSE,
@@ -52,8 +56,10 @@ or `"LOQ"`, must also contain the matching `LOD`/`LOQ` column.}
 \item{xlsx_path}{Path to the source workbook (read by [read_targetlynx()]
 or [read_skyline()]).}
 
-\item{data_source}{`"targetlynx"` (default) or `"skyline"` - selects
-which raw-matrix reader to use.}
+\item{data_source}{`"targetlynx"` (default), `"skyline"` or `"matrix"` -
+selects the reader. `"matrix"` is the vendor-neutral route via
+[read_peak_matrix()]: any software that can export a rectangular
+sample x analyte table can be used without a dedicated parser.}
 
 \item{data_tab_names}{Sheet name(s) holding the Skyline molecule x sample
 matrix; only used when `data_source = "skyline"`. Multiple names are
@@ -81,9 +87,31 @@ only set `snr:`.}
 
 \item{batch_correction}{Logical.}
 
-\item{bc_qc_label, bc_factor_name, bc_header}{Batch-correction parameters.}
+\item{bc_qc_label, bc_factor_name, bc_header}{Batch-correction parameters:
+the reference-sample label, the column holding it, and the batch column.
+Defaults to pooled QCs, which are the only reference guaranteed not to
+differ between batches for biological reasons - see [correct_batch()].}
 
-\item{blank_head, blank_name}{Metadata column and value identifying blanks.}
+\item{bc_check_factor}{Optional study factor; when given, `correct_batch()`
+warns if batch is confounded with it.}
+
+\item{processing_batch}{`sample_meta` column used to partition the *per-batch
+processing* - blank filtering, normalisation, concentration adjustment and
+imputation are each applied within a partition, so blanks and per-feature
+minima are taken from the same acquisition as the samples they apply to.
+`NULL` (default) reuses `bc_header`, which is what earlier versions did
+implicitly; `FALSE` processes every sample together. This is a separate
+question from which column defines the batch-correction reference, even
+when the same column answers both.}
+
+\item{matrix_id_col, matrix_orientation}{Passed to [read_peak_matrix()] when
+`data_source = "matrix"`: the sample-identifier column (`NULL` = first)
+and whether samples are rows or columns.}
+
+\item{blank_head, blank_name}{`sample_meta` column and value identifying
+blank injections. The defaults are the canonical names this package
+documents (`Sample_type` / `Blank`), not a particular laboratory's sheet -
+set them to whatever your workbook uses.}
 
 \item{normalize}{Metadata column used as divisor, or `FALSE`.}
 
@@ -121,8 +149,10 @@ where `fdata[[report_col]] == report_value` are reported. Defaults
 was excluded. Default `"Comment"`.}
 }
 \value{
-A list: `[[1]]` the `DatasetExperiment`, `[[2]]` a data frame of
-  removed features.
+A named list with `dataset` (the `DatasetExperiment`) and
+  `excluded_features` (a data frame of features dropped along the way, with
+  the reason recorded). The elements stay in that order, so existing code
+  indexing `[[1]]` and `[[2]]` keeps working.
 }
 \description{
 Applies (optionally) signal filtering (SNR for TargetLynx; LOD/LOQ for

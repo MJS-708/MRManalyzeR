@@ -4,7 +4,13 @@
 \alias{impute_missing}
 \title{Impute missing values with a fraction of the per-feature minimum}
 \usage{
-impute_missing(de, scalar, blank_head = "Sample_type", blank_name = "Blank")
+impute_missing(
+  de,
+  scalar,
+  blank_head = "Sample_type",
+  blank_name = "Blank",
+  warn_frac = 0.5
+)
 }
 \arguments{
 \item{de}{A `struct::DatasetExperiment`.}
@@ -14,10 +20,21 @@ impute_missing(de, scalar, blank_head = "Sample_type", blank_name = "Blank")
 
 \item{blank_head}{`sample_meta` column identifying blank injections.}
 
-\item{blank_name}{Value in `blank_head` marking a blank injection.}
+\item{blank_name}{Value in `blank_head` marking a blank injection.
+Imputation is the one step that invents numbers, so it records what it did:
+`impute_fill` (the value used for each feature), `n_imputed` and
+`frac_imputed` are added to `variable_meta`. A compound whose
+`frac_imputed` is high is not a measured compound - it is mostly a constant
+- and a difference found in it is an artefact of the fill value. Check that
+column before interpreting anything, and consider excluding above
+`warn_frac`.}
+
+\item{warn_frac}{Warn about features imputed in more than this fraction of
+the non-blank injections. `NULL` disables the warning.}
 }
 \value{
-`de` with `data` imputed, in the original row order.
+`de` with `data` imputed in the original row order, and
+  `impute_fill` / `n_imputed` / `frac_imputed` added to `variable_meta`.
 }
 \description{
 Zeros are treated as missing. For each feature, `NA`s among the non-blank

@@ -55,6 +55,11 @@ What do these numbers mean? [run_stats()] runs the comparisons,
 correlations and linear models described by the YAML `stats_report:` block
 and returns the same tables the statistics report and the output xlsx use.
 
+The `plot_*()` functions are exported rather than hidden inside the report
+templates so that a figure can be reproduced, restyled or subset in one
+line, without editing an R Markdown file or rebuilding it from the matrix.
+The bundled reports call the same functions.
+
 See `vignette("MRManalyzeR")` for a step-by-step walkthrough.
 }
 

@@ -7,11 +7,12 @@
 #' The compounds worth attention sit in the upper corners.
 #'
 #' Rows are taken from the `stats` table returned by [run_stats()], so the plot
-#' and the `stats` sheet of the output xlsx are the same numbers. Only
-#' `t_test` and `tukey` rows carry a fold change, so those are the eligible
-#' methods: a two-level comparison contributes its t-test row directly, while a
-#' three-or-more-level comparison contributes one volcano per Tukey pair -
-#' select the pair with `pair`.
+#' and the `stats` sheet of the output xlsx are the same numbers. Only rows
+#' carrying a fold change are eligible, which excludes the global tests
+#' (`anova`, `kruskal`) - they ask whether *any* group differs and have no
+#' direction. A two-level comparison contributes its single test row; a
+#' three-or-more-level comparison contributes one volcano per post-hoc pair,
+#' selected with `pair`.
 #'
 #' Every significant feature is labelled, up to `top_n_label`; beyond that the
 #' most significant are kept, since a volcano labelled with eighty compounds
@@ -21,7 +22,7 @@
 #' @param comparison Name of the comparison to plot. `NULL` uses the only one
 #'   present, and errors if the table holds more than one.
 #' @param pair For post-hoc rows, the group pair as `"A vs B"`. `NULL` uses the
-#'   `t_test` rows.
+#'   two-group test rows.
 #' @param use_adjusted Plot BH-adjusted p on the y-axis instead of raw p.
 #' @param sig_threshold Significance cut-off; drawn as a dashed line and used
 #'   to colour and label points.
@@ -32,7 +33,7 @@
 #'                                package = "MRManalyzeR"))
 #' de <- subset_dataset(de, conditions = list(Sample_type = "Sample"))
 #' params <- list(comparisons = list(enabled = TRUE, entries = list(
-#'   list(name = "PBS_vs_HDM",
+#'   list(name = "PBS_vs_HDM", method = "welch",
 #'        compare = list(factor = "Treatment",
 #'                       levels = c("PBS", "HDM"))))))
 #' st <- run_stats(de, params)
@@ -51,8 +52,9 @@ plot_volcano = function(stats, comparison = NULL, pair = NULL,
   p_col = if(isTRUE(use_adjusted)) "p_adj" else "p_value"
   p_lbl = if(isTRUE(use_adjusted)) "BH-adjusted p" else "raw p"
 
-  df = stats[stats$method %in% c("t_test", "tukey") &
-               !is.na(stats$log2FC) & !is.na(stats[[p_col]]), , drop = FALSE]
+  posthoc = c("tukey", "pairwise_wilcoxon")
+
+  df = stats[!is.na(stats$log2FC) & !is.na(stats[[p_col]]), , drop = FALSE]
 
   if(is.null(comparison)){
     comps = unique(df$comparison)
@@ -64,10 +66,10 @@ plot_volcano = function(stats, comparison = NULL, pair = NULL,
   df = df[df$comparison %in% comparison, , drop = FALSE]
 
   if(!is.null(pair)){
-    df = df[df$method == "tukey" &
+    df = df[df$method %in% posthoc &
               paste(df$group1, "vs", df$group2) %in% pair, , drop = FALSE]
-  } else if(any(df$method == "t_test")){
-    df = df[df$method == "t_test", , drop = FALSE]
+  } else if(any(!df$method %in% posthoc)){
+    df = df[!df$method %in% posthoc, , drop = FALSE]
   }
 
   if(nrow(df) == 0) return(NULL)

@@ -29,6 +29,12 @@ if(!exists("report_pars") || is.null(report_pars))
 
 `%||%` = function(a, b) if(is.null(a)) b else a
 
+# Colour scheme (shared by every plot). Set once here rather than passed to
+# each plotting function, so a report is internally consistent by default.
+.cols = report_pars$colours %||% list()
+options(MRManalyzeR.palette   = .cols$qualitative %||% "hat",
+        MRManalyzeR.diverging = .cols$diverging   %||% "heatmap2")
+
 # -- Sample identification (shared across all sections) --
 # One column classifies every row; sample_labels names the value(s) marking
 # biological samples (vs blanks / QCs / calibration standards).
@@ -933,29 +939,30 @@ Significance threshold dashed line at p `r if(volcano_use_adj) "(BH-adjusted)" e
 
 ```{r comp-volcano, results="asis", eval=volcano_include && !is.null(stats_tables) && nrow(stats_tables$stats) > 0, fig.width=5.5*fig_scale, fig.height=5*fig_scale, out.width="600px"}
 # Volcano sources:
-#   2-group comparisons -> use the t_test rows directly (have log2FC + p_adj)
-#   3+-group comparisons -> use the tukey post-hoc rows (one volcano per pair)
+#   2-group comparisons -> the single test row (welch / student / wilcoxon)
+#   3+-group comparisons -> the post-hoc rows (one volcano per pair)
+# Global tests (anova / kruskal) have no fold change and are excluded.
 .volc_p_col = if(volcano_use_adj) "p_adj" else "p_value"
 .volc_p_lbl = if(volcano_use_adj) sprintf("BH-adjusted p (%s)", p_adjust) else "raw p"
 
 volc_data = stats_tables$stats %>%
-  dplyr::filter(method %in% c("t_test", "tukey"),
-                !is.na(log2FC), !is.na(.data[[.volc_p_col]]))
+  dplyr::filter(!is.na(log2FC), !is.na(.data[[.volc_p_col]]))
 
 if(nrow(volc_data) == 0){
   cat("_No volcano-eligible rows._\n")
 } else {
   for(comp_name in unique(volc_data$comparison)){
     sub = volc_data %>% dplyr::filter(comparison == comp_name)
-    pair_groups = if("tukey" %in% sub$method)
-      unique(sub %>% dplyr::filter(method == "tukey") %>%
+    .posthoc = c("tukey", "pairwise_wilcoxon")
+    pair_groups = if(any(sub$method %in% .posthoc))
+      unique(sub %>% dplyr::filter(method %in% .posthoc) %>%
                dplyr::transmute(pair = paste(group1, "vs", group2)) %>%
                dplyr::pull(pair))
     else NA
 
     for(pair_lbl in (if(is.na(pair_groups[1])) NA else pair_groups)){
       this = if(is.na(pair_lbl)) sub else
-        sub %>% dplyr::filter(method == "tukey",
+        sub %>% dplyr::filter(method %in% .posthoc,
                               paste(group1, "vs", group2) == pair_lbl)
 
       cat(sprintf("\n### %s%s {-}\n\n", comp_name,

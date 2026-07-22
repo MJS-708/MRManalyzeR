@@ -18,7 +18,18 @@
 #'   `0.5` for half-minimum or `0.2` for a fifth of the minimum.
 #' @param blank_head `sample_meta` column identifying blank injections.
 #' @param blank_name Value in `blank_head` marking a blank injection.
-#' @return `de` with `data` imputed, in the original row order.
+#' Imputation is the one step that invents numbers, so it records what it did:
+#' `impute_fill` (the value used for each feature), `n_imputed` and
+#' `frac_imputed` are added to `variable_meta`. A compound whose
+#' `frac_imputed` is high is not a measured compound - it is mostly a constant
+#' - and a difference found in it is an artefact of the fill value. Check that
+#' column before interpreting anything, and consider excluding above
+#' `warn_frac`.
+#'
+#' @param warn_frac Warn about features imputed in more than this fraction of
+#'   the non-blank injections. `NULL` disables the warning.
+#' @return `de` with `data` imputed in the original row order, and
+#'   `impute_fill` / `n_imputed` / `frac_imputed` added to `variable_meta`.
 #' @family peak-matrix processing
 #' @examples
 #' de <- struct::DatasetExperiment(
@@ -31,13 +42,14 @@
 #' impute_missing(de, scalar = 0.5)$data
 #' @export
 impute_missing = function(de, scalar, blank_head = "Sample_type",
-                          blank_name = "Blank"){
+                          blank_name = "Blank", warn_frac = 0.5){
 
   if(isTRUE(scalar))
     stop("`scalar` must be numeric (e.g. 0.5), not TRUE.")
 
   df    = as.data.frame(de$data)
   smeta = as.data.frame(de$sample_meta)
+  vm    = as.data.frame(de$variable_meta)
 
   blank_samples = if(blank_head %in% colnames(smeta))
     rownames(smeta)[smeta[[blank_head]] %in% blank_name] else character(0)
@@ -50,12 +62,33 @@ impute_missing = function(de, scalar, blank_head = "Sample_type",
   fill_vals = suppressWarnings(vapply(sample_df, min, numeric(1), na.rm = TRUE)) * scalar
 
   # Impute in place so the dataset's row order is preserved.
+  n_imp = stats::setNames(integer(ncol(df)), colnames(df))
   for(j in which(is.finite(fill_vals))){
-    col = df[[j]]
-    col[is.na(col) & !is_blank] = fill_vals[j]
-    df[[j]] = col
+    col      = df[[j]]
+    hit      = is.na(col) & !is_blank
+    n_imp[j] = sum(hit)
+    col[hit] = fill_vals[j]
+    df[[j]]  = col
   }
 
-  de$data = df
+  n_sample = sum(!is_blank)
+  frac_imp = if(n_sample > 0) n_imp / n_sample else n_imp * NA_real_
+
+  key = rownames(vm)
+  vm$impute_fill  = unname(fill_vals[key])
+  vm$n_imputed    = unname(n_imp[key])
+  vm$frac_imputed = round(unname(frac_imp[key]), 3)
+
+  if(!is.null(warn_frac)){
+    bad = names(frac_imp)[is.finite(frac_imp) & frac_imp > warn_frac]
+    if(length(bad))
+      warning(sprintf(
+        "[impute_missing] %d feature(s) imputed in more than %.0f%% of samples and are mostly a constant: %s",
+        length(bad), warn_frac * 100,
+        paste(utils::head(bad, 5), collapse = ", ")))
+  }
+
+  de$data          = df
+  de$variable_meta = vm
   de
 }

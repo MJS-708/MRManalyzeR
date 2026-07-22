@@ -17,16 +17,35 @@ A list with elements `stats`, `correlations`, `linear_models`,
   block was empty).
 }
 \description{
-Iterates over `comparisons:`, `correlations:`, and `linear_models:` and
-returns a list of three tidy data frames suitable for writing to xlsx
+Iterates over `comparisons:`, `correlations:`, `linear_models:` and
+`ion_ratios:` and returns tidy data frames suitable for writing to xlsx
 tabs.
 }
 \details{
-Method auto-selection for comparisons:
+Each comparison names its own test, because the choice has to be made
+before the p-values are seen:
 \itemize{
-  \item 2 levels  -> t-test + Wilcoxon
-  \item 3+ levels -> ANOVA + Kruskal-Wallis (+ Tukey HSD + pairwise Wilcoxon post-hoc)
+  \item 2 levels  -> `welch` (default), `student`, or `wilcoxon`
+  \item 3+ levels -> `anova` (default, with Tukey HSD post-hoc) or
+    `kruskal` (with Holm-adjusted pairwise Wilcoxon post-hoc)
 }
+A comparison with no `method:` falls back to the default and says so, so
+existing configurations keep running.
+
+Add `paired: true` together with `subject:` naming the `sample_meta` column
+that links the two observations of each subject - pre/post, matched tissues,
+the same animal at two timepoints. Only subjects present in both groups
+contribute, and the effect size becomes Cohen's dz (or the matched-pairs
+rank-biserial correlation for `wilcoxon`), which is *not* comparable to the
+between-group values and is labelled distinctly so the two are never pooled.
+The method label gains a `_paired` suffix for the same reason.
+
+Multiple-testing correction is applied *within families*, not across the
+whole table: one family per comparison and method, per correlation analysis
+and subset and method, and per linear-model term. The family used for each
+row is recorded in its `adjust_family` column. Adjusting across unrelated
+analyses would make the size of the correction depend on how many other
+things happened to be configured in the same YAML.
 }
 \examples{
 m  <- data.frame(A = c(10, 12, 11, 20, 24, 22), B = c(5, 6, 5, 11, 13, 12),
@@ -37,7 +56,7 @@ sm <- data.frame(Sample_ID = paste0("S", 1:6),
                  row.names = paste0("S", 1:6))
 de <- struct::DatasetExperiment(data = m, sample_meta = sm, variable_meta = fm)
 params <- list(comparisons = list(enabled = TRUE, entries = list(
-  list(name = "ctrl_vs_trt",
+  list(name = "ctrl_vs_trt", method = "welch",
        compare = list(factor = "Group", levels = c("ctrl", "trt"))))))
 run_stats(de, params)$stats
 }

@@ -39,6 +39,11 @@
 #' correlations and linear models described by the YAML `stats_report:` block
 #' and returns the same tables the statistics report and the output xlsx use.
 #'
+#' The `plot_*()` functions are exported rather than hidden inside the report
+#' templates so that a figure can be reproduced, restyled or subset in one
+#' line, without editing an R Markdown file or rebuilding it from the matrix.
+#' The bundled reports call the same functions.
+#'
 #' See `vignette("MRManalyzeR")` for a step-by-step walkthrough.
 #'
 #' @keywords internal
@@ -85,8 +90,13 @@ utils::globalVariables(c("ID", "ID2", "Name", "S/N", "Report", "Compound"))
 #' @keywords internal
 #' @noRd
 .ltc = list(
-  hat = c("#efb306", "#eb990c", "#e8351e", "#cd023d", "#852f88",
-          "#4e54ac", "#0f8096", "#7db954", "#17a769", "#000000"),
+  # Reordered from the ltc original so the strong, maximally separable hues
+  # come first - blue, red, green, yellow, black, purple - and the off-shades
+  # (orange, crimson, teal, light green) only appear once a variable has more
+  # than six levels. A two- or three-level factor should not be drawn in two
+  # shades of amber.
+  hat = c("#4e54ac", "#e8351e", "#17a769", "#efb306", "#000000", "#852f88",
+          "#eb990c", "#cd023d", "#0f8096", "#7db954"),
   reading = c("#EFBC68", "#919F89", "#EDBDAE", "#57717C",
               "#5F97A4", "#CAEAC8", "#95A1AE", "#C8CFD6"),
   heatmap0 = c("#001219", "#005F73", "#0A9396", "#94D2BD", "#E9D8A6",
@@ -94,17 +104,33 @@ utils::globalVariables(c("ID", "ID2", "Name", "S/N", "Report", "Compound"))
   heatmap2 = c("#ca0020", "#f4a582", "#f7f7f7", "#92c5de", "#0571b0")
 )
 
+#' The palette currently selected for categorical variables
+#'
+#' Read from `getOption("MRManalyzeR.palette")` so a report can set it once
+#' from YAML rather than every plotting function taking a palette argument.
+#'
+#' @return Character vector of hex colours.
+#' @keywords internal
+#' @noRd
+.mrm_palette = function(){
+  nm = getOption("MRManalyzeR.palette", "hat")
+  .ltc[[nm]] %||% .ltc$hat
+}
+
 #' Diverging colour ramp for z-scores and correlations
 #'
-#' `ltc` `heatmap2` reversed, so it runs low-blue to high-red in the direction
-#' these figures are read.
+#' Reversed so it runs low-blue to high-red, the direction these figures are
+#' read. The scheme is `getOption("MRManalyzeR.diverging")`, default
+#' `heatmap2`.
 #'
 #' @param n Number of steps.
 #' @return Character vector of `n` hex colours.
 #' @keywords internal
 #' @noRd
 .diverging_pal = function(n = 101){
-  grDevices::colorRampPalette(rev(.ltc$heatmap2))(n)
+  nm  = getOption("MRManalyzeR.diverging", "heatmap2")
+  pal = .ltc[[nm]] %||% .ltc$heatmap2
+  grDevices::colorRampPalette(rev(pal))(n)
 }
 
 #' Qualitative palette for n categorical levels
@@ -118,8 +144,9 @@ utils::globalVariables(c("ID", "ID2", "Name", "S/N", "Report", "Compound"))
 #' @noRd
 .qual_pal = function(n){
   if(n < 1) return(character(0))
-  if(n <= length(.ltc$hat)) return(.ltc$hat[seq_len(n)])
-  grDevices::colorRampPalette(.ltc$hat)(n)
+  pal = .mrm_palette()
+  if(n <= length(pal)) return(pal[seq_len(n)])
+  grDevices::colorRampPalette(pal)(n)
 }
 
 #' Named colour vector for the sorted levels of a categorical variable
@@ -139,7 +166,7 @@ utils::globalVariables(c("ID", "ID2", "Name", "S/N", "Report", "Compound"))
   lv = sort(unique(x[!is.na(x) & x != "NA"]))
   m  = if(length(lv) == 0)      character(0)
        else if(length(lv) == 2) stats::setNames(
-                                  c(.ltc$hat[6], .ltc$hat[3]), lv)
+                                  .mrm_palette()[1:2], lv)
        else                     stats::setNames(.qual_pal(length(lv)), lv)
   if(any(is.na(x) | x == "NA")) m = c(m, "NA" = "grey70")
   m

@@ -31,6 +31,12 @@ if(!exists("report_pars") || is.null(report_pars))
 
 `%||%` = function(a, b) if(is.null(a)) b else a
 
+# Colour scheme (shared by every plot). Set once here rather than passed to
+# each plotting function, so a report is internally consistent by default.
+.cols = report_pars$colours %||% list()
+options(MRManalyzeR.palette   = .cols$qualitative %||% "hat",
+        MRManalyzeR.diverging = .cols$diverging   %||% "heatmap2")
+
 # -- Sample identification --
 # One column classifies every row; qc_label / sample_labels name the values
 # marking QC injections and biological samples. Every section references

@@ -8,7 +8,9 @@ correct_batch(
   de,
   qc_label = "QC",
   factor_name = "Sample_type",
-  batch_head = "Chrom_Batch"
+  batch_head = "Chrom_Batch",
+  check_factor = NULL,
+  min_ref = 2
 )
 }
 \arguments{
@@ -19,6 +21,15 @@ correct_batch(
 \item{factor_name}{`sample_meta` column holding `qc_label`.}
 
 \item{batch_head}{`sample_meta` column identifying the batch.}
+
+\item{check_factor}{Optional `sample_meta` column holding the study factor.
+When given, the reference samples are cross-tabulated against it and a
+warning is issued if any batch carries only one level - the signature of
+a design where correcting on biological samples would remove real
+differences. `NULL` skips the check.}
+
+\item{min_ref}{Minimum reference samples required in each batch. Below this
+the batch median is not estimable and the correction would be noise.}
 }
 \value{
 The batch-corrected `struct::DatasetExperiment`.
@@ -28,6 +39,21 @@ Convenience wrapper that builds the median-ratio batch-correction model and
 applies it, returning the corrected `DatasetExperiment`. Each batch is scaled
 so its per-feature median matches the grand median across the reference
 (`qc_label`) samples.
+}
+\details{
+The reference has to be material whose true value does not differ between
+batches, because any difference that remains is treated as technical and
+removed. Pooled QC injections satisfy that by construction - the same
+extract, injected repeatedly - which is why `"QC"` is the default.
+
+Using the biological samples as the reference is a legitimate alternative,
+and often a more stable one because there are more of them, but it rests on
+the study being balanced across batches: it assumes the biology is the same
+on average in each batch. Where that holds it is fine. Where batch is
+confounded with the study factor - all treated animals run on day 2, say -
+the between-batch difference is partly the effect you are looking for, and
+correcting removes it silently. Pass `check_factor` to have that assumption
+tested rather than assumed.
 }
 \examples{
 m  <- data.frame(A = c(10, 12, 20, 24), B = c(5, 6, 10, 12),
