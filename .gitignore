@@ -64,3 +64,12 @@ MRManalyzeR.BiocCheck/
 
 # RStudio project file - kept local, not part of the package
 *.Rproj
+
+# Scratch drivers and experiments. Already excluded from the tarball by
+# .Rbuildignore; ignored here too so `git add -A` cannot sweep them onto the
+# submission branch.
+_*
+
+# pkgdown site assets (favicons). Site source rather than package source, and
+# Bioconductor asks that application-specific files stay off the branch.
+pkgdown/
