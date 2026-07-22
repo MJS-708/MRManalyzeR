@@ -37,9 +37,31 @@ assemble_dataset = function(x, feature_meta, sample_meta, name_col = "Name"){
   rownames(metadata_ar) = metadata_ar[[name_col]]
   out_matrix_ar = x[metadata_ar[[name_col]], fdata_output$Compound, drop = FALSE]
 
+  # struct::DatasetExperiment runs make.names() over the metadata it stores, so
+  # a heading like `S-group` becomes `S.group`. Said out loud because the
+  # symptom otherwise appears far away and looks like nothing: a config asking
+  # to colour by `S-group` matches no column, and the plot quietly draws
+  # everything in one colour with no error to trace back.
+  .report_renamed(fdata_output, "feature_metadata")
+  .report_renamed(metadata_ar,  "sample_metadata")
+
   struct::DatasetExperiment(
     data          = out_matrix_ar,
     sample_meta   = metadata_ar,
     variable_meta = fdata_output
   )
+}
+
+#' Announce columns whose names will not survive storage
+#' @keywords internal
+#' @noRd
+.report_renamed = function(df, what){
+  from = colnames(df)
+  to   = make.names(from, unique = TRUE)
+  chg  = from != to
+  if(any(chg))
+    message(sprintf(
+      "[assemble_dataset] %s column(s) renamed for storage: %s. Use the new name in the config.",
+      what, paste(sprintf("'%s' -> '%s'", from[chg], to[chg]),
+                  collapse = ", ")))
 }

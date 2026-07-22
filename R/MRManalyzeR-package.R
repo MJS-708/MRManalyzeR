@@ -57,6 +57,34 @@
 # dplyr NSE column references used across the readers / assemble step.
 utils::globalVariables(c("ID", "ID2", "Name", "S/N", "Report", "Compound"))
 
+#' Resolve a configured metadata column name against the stored names
+#'
+#' `struct::DatasetExperiment` runs `make.names()` over the metadata it is
+#' handed, so a column headed `S-group` in the source workbook is stored as
+#' `S.group`, and `pubchem/KEGG_id` as `pubchem.KEGG_id`. A config naming the
+#' original then matches nothing, and a plot that colours by it falls back to
+#' no colouring at all - which is how a hyphen in a spreadsheet heading turns
+#' into a missing legend with no error anywhere.
+#'
+#' Try the name exactly as written first, so a workbook that genuinely has
+#' both `S-group` and `S.group` is not silently redirected, then its
+#' `make.names()` form.
+#'
+#' @param name Column name from the config, or `NULL`.
+#' @param df Data frame whose columns are being matched.
+#' @return The matching column name, or `NULL` if neither form is present.
+#' @keywords internal
+#' @noRd
+.resolve_meta_col = function(name, df){
+  if(is.null(name)) return(NULL)
+  nm = as.character(name)[1]
+  if(is.na(nm) || !nzchar(nm))  return(NULL)
+  if(nm %in% colnames(df))      return(nm)
+  alt = make.names(nm)
+  if(alt %in% colnames(df))     return(alt)
+  NULL
+}
+
 #' Shared plot theme
 #'
 #' One theme for every plot the package draws, so the two HTML reports and
@@ -91,18 +119,22 @@ utils::globalVariables(c("ID", "ID2", "Name", "S/N", "Report", "Compound"))
 #' @noRd
 .ltc = list(
   # Reordered from the ltc original so the strong, maximally separable hues
-  # come first - blue, red, green, yellow, black, purple - and the off-shades
-  # only appear once a variable has more than six levels. A two- or
-  # three-level factor should not be drawn in two shades of amber.
+  # come first - blue, red, green, yellow, purple - and the off-shades only
+  # appear once a variable has more than five levels. A two- or three-level
+  # factor should not be drawn in two shades of amber.
   #
-  # The off-shades are themselves ordered so that each one sits as far as
-  # possible from the strong hue it resembles: teal first (nothing before it
-  # is close), then crimson (6 places after red), light green (6 after green)
-  # and orange last (6 after yellow). At eight levels the palette therefore
-  # reads blue/red/green/yellow/black/purple/teal/crimson rather than pairing
-  # yellow with orange in the same legend.
-  hat = c("#4e54ac", "#e8351e", "#17a769", "#efb306", "#000000", "#852f88",
-          "#0f8096", "#cd023d", "#7db954", "#eb990c"),
+  # The off-shades are ordered so each sits as far as possible from the strong
+  # hue it resembles: teal, then crimson (5 places after red), light green (5
+  # after green) and orange (5 after yellow), so no legend pairs yellow with
+  # orange until it has nine levels.
+  #
+  # ltc's black is replaced by a mid grey and moved last. Black reads as a
+  # rule or an axis rather than as a category, and it dominates a heatmap
+  # annotation strip; grey recedes, which is what a ninth-most-important
+  # level should do. It is darker than the grey70 used for NA in
+  # .group_fill_colors(), so a real level is never confused with a missing one.
+  hat = c("#4e54ac", "#e8351e", "#17a769", "#efb306", "#852f88",
+          "#0f8096", "#cd023d", "#7db954", "#eb990c", "#5a5a5a"),
   reading = c("#EFBC68", "#919F89", "#EDBDAE", "#57717C",
               "#5F97A4", "#CAEAC8", "#95A1AE", "#C8CFD6"),
   heatmap0 = c("#001219", "#005F73", "#0A9396", "#94D2BD", "#E9D8A6",

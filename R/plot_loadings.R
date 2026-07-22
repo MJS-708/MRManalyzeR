@@ -44,7 +44,8 @@ plot_loadings = function(pca, variable_meta, components = c(1, 2),
 
   feats = rownames(pr$rotation)
 
-  has_colour = !is.null(colour_by) && colour_by %in% colnames(vmeta)
+  colour_by  = .resolve_meta_col(colour_by, vmeta)
+  has_colour = !is.null(colour_by)
   colour_vec = if(has_colour){
     cv = as.character(vmeta[[colour_by]][match(feats, vmeta$Compound)])
     cv[is.na(cv)] = "NA"

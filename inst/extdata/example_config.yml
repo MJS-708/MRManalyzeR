@@ -113,8 +113,8 @@ project: &general
     # -- colours (shared by every plot in this report) --
     colours:
       qualitative: hat                    # hat | reading | heatmap0 - group / class colours
-                                          # hat order: blue, red, green, yellow, black,
-                                          # purple, teal, crimson, light green, orange
+                                          # hat order: blue, red, green, yellow, purple,
+                                          # teal, crimson, light green, orange, grey
       diverging:   heatmap2               # heatmap2 | heatmap0 - z-scores and correlations
 
     # -- general figure pars--
@@ -162,8 +162,8 @@ project: &general
     # -- colours (shared by every plot in this report) --
     colours:
       qualitative: hat                    # hat | reading | heatmap0 - group / class colours
-                                          # hat order: blue, red, green, yellow, black,
-                                          # purple, teal, crimson, light green, orange
+                                          # hat order: blue, red, green, yellow, purple,
+                                          # teal, crimson, light green, orange, grey
       diverging:   heatmap2               # heatmap2 | heatmap0 - z-scores and correlations
 
     # -- general figure pars--

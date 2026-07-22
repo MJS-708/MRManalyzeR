@@ -87,6 +87,28 @@ test_that(".narrow_datatype() pins the enabled block to one value", {
   expect_equal(.narrow_datatype(pmp, "Area")$matrix_data$datatype, "Area")
 })
 
+test_that(".resolve_meta_col() finds columns mangled by make.names()", {
+  # struct stores `S-group` as `S.group`, so a config naming the spreadsheet
+  # heading must still resolve or the plot silently loses its colouring.
+  df = data.frame(Compound = "A", S.group = "x", pubchem.KEGG_id = "1",
+                  stringsAsFactors = FALSE)
+
+  expect_equal(.resolve_meta_col("S-group", df),        "S.group")
+  expect_equal(.resolve_meta_col("pubchem/KEGG_id", df), "pubchem.KEGG_id")
+  expect_equal(.resolve_meta_col("Compound", df),        "Compound")
+
+  expect_null(.resolve_meta_col("Nope", df))
+  expect_null(.resolve_meta_col(NULL, df))
+  expect_null(.resolve_meta_col("", df))
+})
+
+test_that(".resolve_meta_col() prefers an exact match over the mangled one", {
+  # A workbook holding both spellings must not be silently redirected.
+  df = data.frame(check.names = FALSE, `S-group` = "raw", S.group = "clean",
+                  stringsAsFactors = FALSE)
+  expect_equal(.resolve_meta_col("S-group", df), "S-group")
+})
+
 test_that(".read_sheet() names the key and the sheets actually present", {
   skip_if_not_installed("openxlsx")
 

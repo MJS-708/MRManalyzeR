@@ -90,11 +90,13 @@ plot_heatmap = function(de, features = NULL, title = NULL,
                                drop = FALSE]
 
   if(nrow(M) < 3 || ncol(M) < 2) return(NULL)
-  if(!color_samples_by %in% colnames(smeta))
-    stop(sprintf("[plot_heatmap] '%s' is not a sample_meta column.",
-                 color_samples_by))
+  color_samples_by = .resolve_meta_col(color_samples_by, smeta) %||%
+    stop(sprintf("[plot_heatmap] '%s' is not a sample_meta column. Present: %s.",
+                 color_samples_by, paste(colnames(smeta), collapse = ", ")))
+  group_features_by = .resolve_meta_col(group_features_by, vmeta)
+  sample_id_head    = .resolve_meta_col(sample_id_head, smeta)
 
-  if(!is.null(sample_id_head) && sample_id_head %in% colnames(smeta))
+  if(!is.null(sample_id_head))
     rownames(M) = as.character(smeta[[sample_id_head]])
 
   if(transform == "log2"){
@@ -116,8 +118,7 @@ plot_heatmap = function(de, features = NULL, title = NULL,
   ann_row[[color_samples_by]] = smeta[[color_samples_by]]
 
   ann_col = NULL; gaps_col = NULL
-  if(!is.null(group_features_by) &&
-     group_features_by %in% colnames(vmeta)){
+  if(!is.null(group_features_by)){
     feats = colnames(M)
     g = as.character(vmeta[[group_features_by]][match(feats,
                                                       vmeta$Compound)])

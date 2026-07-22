@@ -65,16 +65,20 @@ plot_boxplot = function(de, compound, group_by, facet_by = NULL,
   if(!compound %in% colnames(dm))
     stop(sprintf("[plot_boxplot] '%s' is not a feature in this dataset.",
                  compound))
-  if(!group_by %in% colnames(smeta))
-    stop(sprintf("[plot_boxplot] '%s' is not a sample_meta column.", group_by))
+  group_by = .resolve_meta_col(group_by, smeta) %||%
+    stop(sprintf("[plot_boxplot] '%s' is not a sample_meta column. Present: %s.",
+                 group_by, paste(colnames(smeta), collapse = ", ")))
+  facet_by       = .resolve_meta_col(facet_by, smeta)
+  sample_id_head = .resolve_meta_col(sample_id_head, smeta)
+  tooltip_factor = .resolve_meta_col(tooltip_factor, smeta)
 
   df = data.frame(group = as.character(smeta[[group_by]]),
                   value = dm[[compound]],
                   stringsAsFactors = FALSE)
 
-  sid = if(!is.null(sample_id_head) && sample_id_head %in% colnames(smeta))
+  sid = if(!is.null(sample_id_head))
     as.character(smeta[[sample_id_head]]) else rownames(dm)
-  extra = if(!is.null(tooltip_factor) && tooltip_factor %in% colnames(smeta))
+  extra = if(!is.null(tooltip_factor))
     as.character(smeta[[tooltip_factor]]) else NA_character_
 
   df$tooltip = sprintf("%s: %s<br>%s: %.3g<br>%s: %s",
@@ -82,12 +86,7 @@ plot_boxplot = function(de, compound, group_by, facet_by = NULL,
                        value_label, df$value,
                        tooltip_factor %||% "group", extra)
 
-  if(!is.null(facet_by)){
-    if(!facet_by %in% colnames(smeta))
-      stop(sprintf("[plot_boxplot] '%s' is not a sample_meta column.",
-                   facet_by))
-    df$facet = as.character(smeta[[facet_by]])
-  }
+  if(!is.null(facet_by)) df$facet = as.character(smeta[[facet_by]])
 
   cap = stats::quantile(df$value, probs = yaxis_quant, na.rm = TRUE) *
         yaxis_scalar

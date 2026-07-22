@@ -68,14 +68,16 @@ plot_pca = function(pca, sample_meta, colour_by,
 
   # Re-align: run_pca() may drop samples via sample_na_max.
   smeta = smeta[rownames(x), , drop = FALSE]
-  if(!colour_by %in% colnames(smeta))
-    stop(sprintf("[plot_pca] '%s' is not a sample_meta column.", colour_by))
+  colour_by = .resolve_meta_col(colour_by, smeta) %||%
+    stop(sprintf("[plot_pca] '%s' is not a sample_meta column. Present: %s.",
+                 colour_by, paste(colnames(smeta), collapse = ", ")))
+  label_factor = .resolve_meta_col(label_factor, smeta)
 
   vexp = (pca$pr$sdev^2) / sum(pca$pr$sdev^2) * 100
 
   df = data.frame(PCx = x[, pc[1]], PCy = x[, pc[2]],
                   colour = smeta[[colour_by]], stringsAsFactors = FALSE)
-  df$label = if(!is.null(label_factor) && label_factor %in% colnames(smeta))
+  df$label = if(!is.null(label_factor))
     as.character(smeta[[label_factor]]) else rownames(x)
 
   is_num = if(is.na(numeric)) is.numeric(df$colour) else isTRUE(numeric)
