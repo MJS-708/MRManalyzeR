@@ -205,7 +205,12 @@ process_dataset = function(fdata,
       signal_filter, signal_filter))
 
   # --- Validation ---------------------------------------------------------
-  for(h in c(bc_factor_name, bc_header, blank_head)){
+  # Only complain about a column the run will actually consult: warning that
+  # blank_head is missing when blank_filter is off is noise, and noise is what
+  # makes the real warnings easy to skip past.
+  needed_heads = c(if(isTRUE(batch_correction)) c(bc_factor_name, bc_header),
+                   if(!isFALSE(blank_filter))   blank_head)
+  for(h in unique(needed_heads)){
     if(!h %in% colnames(metadata))
       warning(sprintf("'%s' not a metadata column.", h))
   }
@@ -299,15 +304,27 @@ process_dataset = function(fdata,
   # silently partitioned every processing step. Those are different questions,
   # so `processing_batch` now asks the second one explicitly - defaulting to
   # bc_header, which preserves the previous behaviour.
-  proc_batch = if(is.null(processing_batch)) bc_header else processing_batch
+  asked_for  = !is.null(processing_batch)
+  proc_batch = if(asked_for) processing_batch else bc_header
 
-  if(!isFALSE(proc_batch) &&
-     (is.null(proc_batch) || !proc_batch %in% colnames(meta_yes))){
-    stop(sprintf(
-      "processing_batch='%s' is not a column in sample_metadata. Set it to an existing column, or to False to process every sample together (got: %s).",
-      proc_batch %||% "<NULL>",
-      paste(colnames(meta_yes), collapse = ", ")))
+  if(!isFALSE(proc_batch) && !is.null(proc_batch) &&
+     !proc_batch %in% colnames(meta_yes)){
+    if(asked_for){
+      # Named outright, so a missing column is a mistake worth stopping for.
+      stop(sprintf(
+        "processing_batch='%s' is not a column in sample_metadata. Set it to an existing column, or to False to process every sample together (got: %s).",
+        proc_batch, paste(colnames(meta_yes), collapse = ", ")))
+    }
+    # Inherited from bc_header rather than requested. A study with no batch
+    # column at all is an ordinary single-batch run, and failing it over a
+    # value nobody typed would be wrong - so say what is happening and carry
+    # on with every sample in one batch.
+    warning(sprintf(
+      "processing_batch defaulted to bc_header='%s', which is not a sample_metadata column; processing every sample together. Set processing_batch explicitly to silence this.",
+      proc_batch), call. = FALSE)
+    proc_batch = FALSE
   }
+  if(is.null(proc_batch)) proc_batch = FALSE
 
   # The correction column is only needed if correction is actually requested.
   if(isTRUE(batch_correction) &&
