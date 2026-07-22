@@ -22,24 +22,7 @@ project: &general
                                    # so fn, datatype and suffix must match that file.
                                    # If they don't, the error lists the .RDS files found.
 
-    # 1. Sample metadata columns
-    sample_meta_tab: sample_metadata      # sheet holding one row per injection
-    name_col: Name                        # sample id (matches injection / matrix rows)
-    include_col: Include                  # sample include-filter column
-    include_value: "YES"                  # value marking rows to process
-
-    # 2. Feature metadata columns
-    feature_meta_tab: feature_metadata    # sheet holding one row per compound
-    compound_col: Compound                # feature id
-    processing_name_col: Processing_name  # raw feature name (joins to source)
-    report_col: Report                    # feature include-filter column. Optional: if the
-                                          # column is absent every feature is reported (with a
-                                          # warning), which is normal for a feature table
-                                          # curated outside a TargetLynx workflow.
-    report_value: "YES"                   # value marking features to report
-    comment_col: Comment                  # exclusion-reason column (optional)
-
-    # 3. Data source  (enable EXACTLY ONE)
+    # 1. Data source  (enable EXACTLY ONE)
     #    The enabled block names the reported value, which tags every output
     #    filename: datatype: for tl_data / matrix_data, signal_filter: for
     #    skyline_data (a Skyline export has no units tag, so the LOD / LOQ
@@ -64,8 +47,27 @@ project: &general
       id_col: ~                           # label column (not a measurement); ~ = first column.
                                           # samples_rows -> holds sample names; samples_cols ->
                                           # holds compound names. The other axis is the header row.
-      orientation: samples_rows           # samples_rows | samples_cols
+      orientation: samples_rows           # samples_rows | samples_cols. Get this wrong and the
+                                          # run reports every feature and every sample as
+                                          # unmatched rather than failing - watch the console.
       signal_filter: False                # LOD | LOQ | False (needs the column in feature_metadata)
+
+    # 2. Sample metadata columns
+    sample_meta_tab: sample_metadata      # sheet holding one row per injection
+    name_col: Name                        # sample id (matches injection / matrix rows)
+    include_col: Include                  # sample include-filter column
+    include_value: "YES"                  # value marking rows to process
+
+    # 3. Feature metadata columns
+    feature_meta_tab: feature_metadata    # sheet holding one row per compound
+    compound_col: Compound                # feature id
+    processing_name_col: Processing_name  # raw feature name (joins to source)
+    report_col: Report                    # feature include-filter column. Optional: if the
+                                          # column is absent every feature is reported (with a
+                                          # warning), which is normal for a feature table
+                                          # curated outside a TargetLynx workflow.
+    report_value: "YES"                   # value marking features to report
+    comment_col: Comment                  # exclusion-reason column (optional)
 
     # 4. Blank filter
     blank_filter: False                   # nx > blank median | False
@@ -94,8 +96,11 @@ project: &general
     bc_check_factor: ~                   # study factor; warns if batch is confounded with it
     bc_factor_name: "Sample_type"         # column holding bc_qc_label
     bc_header: "Chrom_Batch"              # batch-label column
-    processing_batch: ~                  # ~ = use bc_header (as before) | column | False
-                                         # partitions blank filter / normalise / adjust / impute
+    processing_batch: ~                  # partitions blank filter / normalise / adjust / impute.
+                                         # ~ = follow bc_header; if that column does not exist
+                                         # the run warns and treats every sample as one batch.
+                                         # Naming a column that does not exist is an error.
+                                         # False = one batch, no warning (single-batch studies)
 
     # 9. Output
     scale_fac: 1                          # multiply outputs (e.g. 1000: ng/mL -> pg/mL)
