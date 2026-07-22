@@ -1,11 +1,16 @@
 # MRManalyzeR 0.99.0
 
 * Initial Bioconductor submission.
-* End-to-end processing of targeted LC-MS lipidomics and metabolomics data
-  exported from Waters TargetLynx, driven from a single YAML config via
-  `run_MRManalyzeR()`: peak-matrix assembly, S/N and blank filtering,
-  missing-value imputation, normalisation, concentration adjustment, and
-  batch correction.
+* Post-acquisition processing of targeted LC-MS/MS lipidomics and metabolomics
+  results exported from Waters TargetLynx or Skyline, or supplied as a plain
+  sample-by-analyte matrix: peak-matrix assembly, S/N and LOD/LOQ filtering,
+  blank filtering, missing-value imputation, normalisation, internal-standard
+  and volume adjustment of vendor-reported concentrations, and batch
+  correction. Chromatographic peak detection, integration and
+  calibration-curve fitting are outside its scope.
+* Every step is an exported function operating on a
+  `struct::DatasetExperiment`; a whole workflow can additionally be driven
+  from a single YAML config via `run_MRManalyzeR()`.
 * Self-contained HTML data-quality and statistical reports: group summaries,
   PCA, sample x feature heatmaps, volcano plots, feature-feature correlations,
   linear models, and enzyme-activity ion ratios.

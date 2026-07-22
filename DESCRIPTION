@@ -6,15 +6,19 @@ Authors@R: person("Matthew J.", "Smith",
                   email = "mattyjsmith123@gmail.com",
                   role = c("aut", "cre"),
                   comment = c(ORCID = "0000-0002-7357-2670"))
-Description: End-to-end processing workflow for targeted lipidomics and
-    metabolomics data exported from Waters TargetLynx or from Skyline. Reads
-    xlsx workbooks, builds a peak-area / concentration matrix with optional
-    signal filtering (SNR, LOD or LOQ), blank filtering, normalisation,
-    calibration and internal-standard concentration adjustment, missing-value
-    imputation, and batch correction, then renders self-contained HTML data
-    quality and statistical reports. Each step is an exported function acting
-    on a DatasetExperiment, and a whole run can be driven from a single YAML
-    config via run_MRManalyzeR().
+Description: Reproducible post-acquisition processing of targeted LC-MS/MS
+    lipidomics and metabolomics results exported from Waters TargetLynx or
+    from Skyline, or supplied as a plain sample-by-analyte matrix. Reads the
+    quantitative result tables, integrates them with sample and feature
+    metadata, and applies configurable signal filtering (SNR, LOD or LOQ),
+    blank filtering, normalisation, internal-standard and volume adjustment
+    of vendor-reported concentrations, missing-value imputation and batch
+    correction. Each step is an exported function acting on a struct
+    DatasetExperiment; a complete workflow can additionally be driven from a
+    single YAML configuration via run_MRManalyzeR(), which also renders
+    self-contained HTML data-quality and statistical reports. Chromatographic
+    peak detection, peak integration and calibration-curve fitting from raw
+    mass-spectrometry data are outside its scope.
 License: MIT + file LICENSE
 Encoding: UTF-8
 biocViews: Metabolomics, Lipidomics, MassSpectrometry, QualityControl,

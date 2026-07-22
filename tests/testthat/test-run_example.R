@@ -15,7 +15,7 @@ test_that("run_example produces both reports + xlsx + RDS", {
   td <- withr::local_tempdir()
   res <- run_example(results_dir = td, open = FALSE)
 
-  out_dir <- attr(res, "results_dir")
+  out_dir <- res$output_directory
   expect_equal(normalizePath(out_dir), normalizePath(td))
 
   files <- list.files(out_dir, recursive = TRUE)

@@ -15,12 +15,12 @@
 #' @param render Logical. Render the HTML reports? Default `TRUE`. Set
 #'   `FALSE` to build the peak matrix + xlsx/RDS outputs only (no pandoc) -
 #'   a quick smoke test of the processing workflow.
-#' @return Invisibly, the list returned by [`run_MRManalyzeR()`]; the
-#'   resolved results directory is attached as attribute `"results_dir"`.
+#' @return Invisibly, the list returned by [`run_MRManalyzeR()`], whose
+#'   `output_directory` element is the resolved results directory.
 #' @examples
 #' # Light run: build the peak matrix + outputs, skip HTML report rendering.
 #' res <- run_example(render = FALSE, open = FALSE)
-#' attr(res, "results_dir")   # where the xlsx + rds landed
+#' res$output_directory       # where the xlsx + rds landed
 #' @family entry points
 #' @export
 run_example = function(results_dir = tempfile("MRManalyzeR_example_"),
@@ -67,6 +67,6 @@ run_example = function(results_dir = tempfile("MRManalyzeR_example_"),
     for(h in htmls) utils::browseURL(h)
   }
 
-  attr(res, "results_dir") = results_dir
+  res$output_directory = results_dir
   invisible(res)
 }

@@ -2,19 +2,48 @@
 
 Reproducible post-acquisition processing of targeted LC-MS/MS metabolomics
 and lipidomics results exported from Waters TargetLynx or Skyline. It reads
-the quantitative result tables, integrates feature and sample metadata,
-applies configurable quality-control and matrix-processing steps, and produces
-an analysis-ready Bioconductor object plus self-contained HTML reports for data
-quality and statistics. Driven from a single YAML config — no driver script
-needed.
+the quantitative result tables, integrates them with sample and feature
+metadata, applies configurable quality-control and matrix-processing steps,
+and returns an analysis-ready `struct::DatasetExperiment` together with
+self-contained data-quality and statistical reports.
 
-It does **not** perform chromatographic peak detection, integration or
-calibration-curve fitting from raw mass-spectrometry data: it starts where the
-vendor software finishes.
+Each processing and analysis step is available as an exported R function
+operating on that object. Complete workflows can additionally be run from a
+single YAML configuration, without writing a driver script.
 
-MRManalyzeR was developed around targeted LC-MS/MS workflows at the Wheelock
-lab, Karolinska Institutet, and supports configurable metadata schemas for use
-in other laboratories.
+MRManalyzeR starts where the vendor software finishes. It does **not** perform
+chromatographic peak detection, peak integration or calibration-curve fitting
+from raw mass-spectrometry data.
+
+## Scope
+
+Built for **targeted quantitative assays** — methods of roughly 30 MRM
+transitions upward, where the analytes are known compounds carrying pathway
+or class annotation, and the experiment is designed to test a hypothesis
+rather than to discover features.
+
+Two consequences follow, and they are deliberate:
+
+* **Quantification is internal-standard based.** Normalisation and batch
+  correction are therefore intentionally limited — an IS-corrected targeted
+  panel does not need, and can be harmed by, the aggressive signal-drift
+  modelling that untargeted workflows rely on.
+* **Feature metadata carries biology.** Compound class and enzymatic pathway
+  are first-class: they group and colour heatmap annotations, PCA loadings
+  and correlation blocks throughout.
+
+The primary input is TargetLynx. Skyline exports and plain sample-by-analyte
+matrices from any other software are supported through the same workflow, and
+the metadata schema is configurable for other laboratories.
+
+### Where MRManalyzeR fits
+
+| Task | Tool |
+|---|---|
+| Raw untargeted LC-MS feature detection and alignment | `xcms` |
+| General metabolomics peak-matrix preprocessing | `pmp` |
+| Metabolite annotation-table workflows | `MetMashR` |
+| Targeted assay processing, QC and reporting | **MRManalyzeR** |
 
 ---
 
@@ -22,9 +51,9 @@ in other laboratories.
 
 ### Bioconductor dependency (do this first)
 
-`MRManalyzeR` depends on `struct`, which is on Bioconductor rather than CRAN,
-so `install_github()` / `devtools::install()` cannot pull it automatically.
-Install it once:
+MRManalyzeR depends on `struct`, which is distributed through Bioconductor
+rather than CRAN, so install it with `BiocManager` before installing
+MRManalyzeR from GitHub:
 
 ```r
 if(!requireNamespace("BiocManager", quietly = TRUE))
@@ -63,13 +92,30 @@ install and produce both reports. No paths to configure:
 
 ```r
 res <- MRManalyzeR::run_example()
-attr(res, "results_dir")    # where the xlsx + html reports were written
+res$output_directory   # where the xlsx + html reports were written
+res$datasetExperiment  # the processed dataset
+res$stats_tables       # comparisons, correlations, linear models
 ```
 
 `run_example()` copies the bundled YAML, points it at
 `inst/extdata/example_data.xlsx` and a fresh `tempdir()`, runs
 `run_MRManalyzeR()`, and (in interactive sessions) opens the rendered
 HTML reports in the RStudio viewer / default browser.
+
+### The returned object
+
+Every entry point returns a list whose `datasetExperiment` element is a
+`struct::DatasetExperiment` holding four aligned pieces:
+
+| Slot | Contents |
+|---|---|
+| `data` | the sample × feature matrix, in the reported datatype |
+| `sample_meta` | one row per injection, plus everything the YAML added |
+| `variable_meta` | one row per compound: class, pathway, CV metrics, exclusion reasons |
+| `name` / `description` | provenance carried through to the reports |
+
+Because it is a `DatasetExperiment`, the result drops straight into other
+Bioconductor tooling rather than being a private format.
 
 ### Example dataset
 
@@ -82,24 +128,58 @@ TargetLynx-style workbook with `feature_metadata`, `sample_metadata` and
 `lcms_data_*` sheets; the bundled YAML (`inst/extdata/example_config.yml`)
 is annotated and ready to copy as a starting point for your own studies.
 
+A fully synthetic two-batch dataset (`example_synthetic.RDS`) is also
+bundled, and is what every function's `@examples` block runs on.
+
+---
+
+## Step-by-step API
+
+The YAML route below is a convenience layer over exported functions. Any
+step can be called directly on a `DatasetExperiment`:
+
+```r
+library(MRManalyzeR)
+
+de <- assemble_dataset(read_targetlynx("study.xlsx", datatype = "Area"),
+                       feature_meta, sample_meta)
+de <- filter_blanks(de)
+de <- normalise_matrix(de, column = "protein_mg")
+de <- impute_missing(de, scalar = 0.2)
+de <- correct_batch(de, batch_head = "Chrom_Batch")
+
+qc  <- add_cv_metrics(de)
+pca <- run_pca(de, transform = "log2", scale = TRUE)
+plot_pca(pca, de, colour_by = "Treatment")
+```
+
+See `vignette("MRManalyzeR")` for the full walkthrough, and `?MRManalyzeR`
+for the four stages the functions are grouped into: **data parse →
+peak-matrix processing → QC check → stats**.
+
 ---
 
 ## Usage on your own data
 
 ### Step 1 — prepare the data xlsx
 
-The input workbook needs at least three sheets:
+The input workbook needs at least three sheets (all sheet names are
+configurable):
 
-* **`feature_metadata`** — one row per compound. Required columns:
-  `Processing_name` (TargetLynx ID, used internally), `Compound`
-  (display name), and `Report` populated with `YES` / `NO` based on
-  manual peak interpretation.
-* **`sample_metadata`** — one row per acquisition. The acquisition name
-  must match the TargetLynx export exactly. Add any study metadata you
-  want available for QC plots and statistics (e.g. `Injection_order`,
-  `Chrom_Batch`, `Sex`, `Treatment`, `Sample_type`).
+* **`feature_metadata`** — one row per compound. Required: `Processing_name`
+  (the vendor's identifier, used to join to the source table) and `Compound`
+  (display name). Optional `Report` column, `YES` / `NO`, indicating whether
+  the feature passed prior chromatographic review in TargetLynx or Skyline
+  and should be included downstream; if the column is absent every feature is
+  reported. MRManalyzeR does not itself inspect chromatographic peak shape —
+  that judgement stays in the vendor software.
+* **`sample_metadata`** — one row per acquisition. The acquisition name must
+  match the vendor export exactly. Add any study metadata you want available
+  for QC plots and statistics (e.g. `Injection_order`, `Chrom_Batch`, `Sex`,
+  `Treatment`, `Sample_type`).
 * **`lcms_data_1`** (and optionally `lcms_data_2`, …) — the TargetLynx
   summary table. All `lcms_data_*` sheets must share the same feature set.
+  Skyline and generic-matrix inputs use their own sheets instead.
 
 ### Step 2 — copy and edit the YAML template
 
@@ -114,10 +194,14 @@ Then edit `config.yml`. The key blocks are:
 
 | Block | Purpose |
 |---|---|
-| `paths:` | input xlsx location, output directory, datatype to report (`Area` / `Response` / `ng/mL` / …) |
-| `PeakMatrixProcessing:` | SNR threshold, blank/MV filters, batch correction, normalisation |
-| `data_quality_report:` | per-compound intensity-vs-injection-order plots, QQ plots, QC PCA |
-| `stats_report:` | comparisons (auto t-test/Wilcoxon/ANOVA), boxplots, correlations, linear models, PCA, volcano, ion ratios, heatmap |
+| `paths:` | input xlsx location, output directory, output filename stem |
+| `PeakMatrixProcessing:` | data source and datatype, signal / blank / MV filters, normalisation, IS and volume adjustment, batch correction |
+| `data_quality_report:` | per-compound measurement vs injection order, Q-Q normality, QC PCA |
+| `stats_report:` | configured group comparisons and multigroup tests, boxplots, correlations, linear models, PCA, volcano, ion ratios, heatmaps |
+
+The statistical method is chosen explicitly per comparison (`welch`,
+`student`, `wilcoxon` for two groups; `anova` or `kruskal` for three or
+more) — nothing is selected automatically on your behalf.
 
 Every option is documented inline in the bundled YAML — read it once
 before editing.
@@ -128,17 +212,24 @@ before editing.
 res <- MRManalyzeR::run_MRManalyzeR("config.yml")
 ```
 
-This writes:
+This writes, into `paths.result_dir`:
 
-* `<fn>_<datatype>_.xlsx` — processed peak matrix + the resolved YAML
+* `<fn>_<datatype><suffix>.xlsx` — processed matrix, feature metadata and
+  sample metadata
+* `<fn>_<datatype><suffix>_stats.xlsx` — a `key` sheet defining every column,
+  then `stats`, `correlations`, `linear_models`, `ion_ratios` and `summary`
+* `<fn>_<datatype><suffix>_data_quality_report.html`
+* `<fn>_<datatype><suffix>_stats_report.html`
+* `<fn>_<datatype><suffix>.RDS` and `.txt` — the dataset and the resolved
   parameters
-* `<fn>_<datatype>__stats.xlsx` — `stats`, `correlations`, `linear_models`
-  tabs from the comparisons defined in the YAML
-* `<fn>_<datatype>__data_quality_report.html`
-* `<fn>_<datatype>__stats_report.html`
+
+The bundled config sets `suffix: _`, which is why the shipped examples read
+`example_data_ng_mL__stats.xlsx` with two underscores. Set `suffix: ""` for
+single ones.
 
 To re-render reports from an already-processed RDS (skipping the xlsx
-ingest), set `PeakMatrixProcessing.execute: False` and re-run.
+ingest), set `PeakMatrixProcessing.execute: False` and re-run — `fn`,
+`datatype` and `suffix` must then match the stored file.
 
 ---
 
@@ -172,8 +263,12 @@ report block of the YAML.
 
 | Report | Sections |
 |---|---|
-| `data_quality_report` | sample summary; per-compound intensity vs injection order; per-compound Q-Q normality; QC PCA (one tab per coloring) |
-| `stats_report` | global summaries; per-comparison p-value tables; per-compound boxplots (faceted across comparisons + by free-form factor); per-comparison PCA (scores + loadings); volcano; ion ratios (e.g. EpOME/DiHOME for sEH activity); samples × features heatmap; correlations; linear models |
+| `data_quality_report` | sample summary; per-compound measurement vs injection order, in the selected datatype; per-compound Q-Q normality; QC PCA (one tab per colouring) |
+| `stats_report` | global summaries; per-comparison statistical tables; per-compound boxplots (faceted across comparisons + by free-form factor); per-comparison PCA (scores + loadings); volcano; ion ratios (e.g. EpOME/DiHOME for sEH activity); samples × features heatmap; correlations; linear models |
+
+Every figure in both reports is drawn by an exported `plot_*()` function, so
+any panel can be reproduced, restyled or subset in one line without editing
+an R Markdown file.
 
 ---
 

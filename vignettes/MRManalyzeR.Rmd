@@ -146,7 +146,7 @@ that an installation works before pointing the package at real data.
 
 ```{r run-example}
 res <- run_example(render = FALSE, open = FALSE)
-list.files(attr(res, "results_dir"))
+list.files(res$output_directory)
 ```
 
 Everything after this section unpacks what that single call did.

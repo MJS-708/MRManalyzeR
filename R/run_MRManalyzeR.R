@@ -1,4 +1,4 @@
-#' Run the end-to-end MRManalyzeR workflow from a YAML config
+#' Run the post-acquisition MRManalyzeR workflow from a YAML config
 #'
 #' Single entry point that:
 #' \itemize{
@@ -341,6 +341,10 @@ run_MRManalyzeR = function(path_yaml){
     datasetExperiment = combined_datamatrices,
     removed_features  = removed_features,
     stats_tables      = stats_tables,
+    # A named element rather than an attribute: this is the first thing
+    # anyone wants after a run, and `res$output_directory` is discoverable
+    # from str() and tab-completion in a way attr() is not.
+    output_directory  = project_paths$result_dir,
     out_xlsx       = out_xlsx,
     out_stats_xlsx = out_stats_xlsx,
     out_RDS        = out_RDS,
