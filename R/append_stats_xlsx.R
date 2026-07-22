@@ -115,6 +115,8 @@ append_stats_xlsx = function(out_xlsx, stats_tables,
                      gridExpand = TRUE)
   openxlsx::freezePane(wb, "key", firstRow = TRUE)
 
+  # worksheetOrder indexes the creation order that sheets() reports, and is
+  # applied when the workbook is written - sheets() itself does not change.
   idx = match("key", openxlsx::sheets(wb))
   openxlsx::`worksheetOrder<-`(
     wb, value = c(idx, setdiff(seq_along(openxlsx::sheets(wb)), idx)))

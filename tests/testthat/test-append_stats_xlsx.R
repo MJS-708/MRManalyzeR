@@ -47,11 +47,14 @@ test_that("the key sheet is written first and covers only the sheets present", {
 
   .write_key_sheet(wb)
 
-  expect_equal(openxlsx::sheets(wb)[1], "key")
-
   tmp = tempfile(fileext = ".xlsx")
   openxlsx::saveWorkbook(wb, tmp, overwrite = TRUE)
   on.exit(unlink(tmp), add = TRUE)
+
+  # worksheetOrder is applied when the workbook is written; the in-memory
+  # sheets() listing stays in creation order, so the tab order has to be read
+  # back from the file - which is the thing that matters anyway.
+  expect_equal(openxlsx::getSheetNames(tmp)[1], "key")
 
   got = openxlsx::read.xlsx(tmp, sheet = "key")
   expect_true(all(c("stats", "(all sheets)") %in% got$Sheet))
