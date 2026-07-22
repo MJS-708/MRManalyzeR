@@ -141,13 +141,6 @@ interactive_plots = isTRUE(report_pars$interactive_plots %||% TRUE) &&
   }
 }
 
-# Pre-built theme reused across the per-compound loop
-compound_theme = ggplot2::theme_classic() +
-  ggplot2::theme(
-    legend.position = "bottom",
-    axis.title      = ggplot2::element_text(face = "bold", color = "black", size = 12),
-    axis.text       = ggplot2::element_text(face = "bold", color = "black", size = 8)
-  )
 ```
 
 # 1. Aim
@@ -175,34 +168,19 @@ DT::datatable(
 
 ```{r cvs}
 # Per-feature CV in QC vs samples (when QC samples present)
-dm = as.data.frame(data_matrix)
-n_feat = ncol(dm)
-feat_names = colnames(dm) %||% character(0)
-
 # CV_QC over QC rows; CV_sample over biological-sample rows only (NOT
 # "everything non-QC", which would fold in blanks / calibration curves).
-qc_idx     = which(metadata[[sample_type_head]] %in% qc_label)
-sample_idx = which(metadata[[sample_type_head]] %in% sample_labels)
+# add_cv_metrics() is idempotent, so recomputing here is safe even though
+# run_MRManalyzeR() has already applied it.
+qc_idx = which(metadata[[sample_type_head]] %in% qc_label)
 
-cv_fn = function(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE) * 100
+.cv_de = add_cv_metrics(combined_datamatrices,
+                        sample_type_head = sample_type_head,
+                        qc_label         = qc_label,
+                        sample_labels    = sample_labels)
 
-# Always return a length-n_feat vector so data.frame() never sees a length
-# mismatch — even when qc_idx is empty or n_feat is zero.
-cv_col = function(idx){
-  if(n_feat == 0 || length(idx) < 2) return(rep(NA_real_, n_feat))
-  round(vapply(dm, function(x) cv_fn(x[idx]), numeric(1)), 1)
-}
-
-cv_qc_vec     = cv_col(qc_idx)
-cv_sample_vec = cv_col(sample_idx)
-cv_table = data.frame(
-  Compound  = feat_names,
-  CV_QC     = cv_qc_vec,
-  CV_sample = cv_sample_vec,
-  check.names      = FALSE,
-  stringsAsFactors = FALSE
-)
-cv_table$CV_sample_vs_QC = round(cv_sample_vec / cv_qc_vec, 2)
+cv_table = as.data.frame(.cv_de$variable_meta)[
+  , c("Compound", "CV_QC", "CV_sample", "CV_sample_vs_QC"), drop = FALSE]
 
 if(length(qc_idx) < 2){
   cat(sprintf(
@@ -219,16 +197,6 @@ DT::datatable(cv_table, filter = "top",
 `r if(!plot_intensity_per_compound) "_Skipped — set_ \x60plot_intensity_per_compound: True\x60 _in YAML to enable._"`
 
 ```{r intensity-dropdown, results="asis", eval=plot_intensity_per_compound, fig.width=10*fig_scale, fig.height=5*fig_scale}
-# Subset to requested sample types
-keep = metadata[[sample_type_head]] %in% intensity_plot_levels
-inj_data = data_matrix[keep, , drop = FALSE]
-inj_data$injection_order = if(injection_order_head %in% colnames(metadata))
-  metadata[[injection_order_head]][keep] else seq_len(nrow(inj_data))
-# Colour points by the sample-type classifier.
-inj_data$type = as.character(metadata[[sample_type_head]][keep])
-inj_data$.sample_id = if(sample_id_head %in% colnames(metadata))
-  as.character(metadata[[sample_id_head]][keep]) else rownames(inj_data)
-
 make_safe_id = function(x) gsub("[^A-Za-z0-9_\\-]", "_", x)
 safe_ids = vapply(compound_names, make_safe_id, character(1))
 # Alphabetise dropdown options for easier scanning (T3.5-7); plot blocks
@@ -267,20 +235,15 @@ function showCompoundPlot(id){
 for(i in seq_along(compound_names)){
   compound = compound_names[i]
   cid      = safe_ids[i]
-  axis_limit = quantile(inj_data[[compound]], prob = yaxis_quant, na.rm = TRUE) * yaxis_scalar
-  inj_data$.tooltip = sprintf("%s: %s<br>%s: %.3g<br>%s: %s",
-                              sample_id_head, inj_data$.sample_id,
-                              value_label, inj_data[[compound]],
-                              sample_type_head, inj_data$type)
 
-  p = ggplot2::ggplot(inj_data,
-                      ggplot2::aes(injection_order, .data[[compound]])) +
-        ggplot2::geom_point(ggplot2::aes(color = type, text = .tooltip),
-                            size = 3, alpha = 0.6) +
-        ggplot2::scale_color_brewer(palette = "Set1", na.value = "grey60") +
-        ggplot2::coord_cartesian(ylim = c(0, axis_limit)) +
-        ggplot2::labs(x = "Injection order", y = units, title = compound) +
-        compound_theme
+  p = plot_drift(combined_datamatrices, compound,
+                 sample_type_head     = sample_type_head,
+                 levels               = intensity_plot_levels,
+                 injection_order_head = injection_order_head,
+                 sample_id_head       = sample_id_head,
+                 value_label          = units,
+                 yaxis_quant          = yaxis_quant,
+                 yaxis_scalar         = yaxis_scalar)
 
   # Show the alphabetically-first compound by default (matches dropdown selection)
   display = if(safe_ids[i] == .safe_ids_alpha[1]) "block" else "none"
@@ -298,15 +261,6 @@ for(i in seq_along(compound_names)){
 `r if(plot_qq_per_compound) sprintf("Sample-level normality assessment per compound. Filter applied to drop blanks/QCs/calibration: \x60%s\x60 _∈ {%s}_ → _%d samples kept (of %d in metadata). One tab per transform listed in_ \x60qq_transform\x60_:_ %s_. Caption shows Shapiro-Wilk W and p (3 ≤ n ≤ 5000)._", sample_type_head, paste(intensity_plot_levels, collapse=", "), sum(metadata[[sample_type_head]] %in% intensity_plot_levels), nrow(metadata), paste(qq_transforms, collapse=", "))`
 
 ```{r qq-dropdown, results="asis", eval=plot_qq_per_compound, fig.width=6*fig_scale, fig.height=5*fig_scale}
-keep_qq = metadata[[sample_type_head]] %in% intensity_plot_levels
-qq_data = data_matrix[keep_qq, , drop = FALSE]
-
-.qq_apply = function(v, mode){
-  if(mode == "log2") return(suppressWarnings(log2(v + 1)))
-  if(mode == "sqrt") return(suppressWarnings(sqrt(pmax(v, 0))))
-  v
-}
-
 make_safe_id_qq = function(x) gsub("[^A-Za-z0-9_\\-]", "_", x)
 # Iterate compounds in import order for the plot blocks; the dropdown lists
 # them alphabetically (T3.5-7) for easier scanning.
@@ -343,38 +297,11 @@ function showQQPlot_%s(id){
   for(i in seq_along(compound_names)){
     compound = compound_names[i]
     cid      = safe_ids_qq[i]
-    v_raw    = qq_data[[compound]]
-    v        = .qq_apply(v_raw[!is.na(v_raw)], tr)
 
-    sw_lbl = ""
-    if(length(v) >= 3 && length(v) <= 5000){
-      sw = tryCatch(stats::shapiro.test(v), error = function(e) NULL)
-      if(!is.null(sw))
-        sw_lbl = sprintf("  Shapiro-Wilk W = %.3f, p = %s",
-                         sw$statistic,
-                         format.pval(sw$p.value, digits = 3, eps = 1e-4))
-    }
-
-    if(length(v) < 3){
-      p = ggplot2::ggplot() + ggplot2::theme_void() +
-            ggplot2::labs(title = sprintf("%s — too few non-NA values (n=%d)",
-                                          compound, length(v)))
-    } else {
-      df_qq = data.frame(value = v)
-      y_lab = switch(tr,
-                     log2 = sprintf("log2(%s + 1) sample quantiles", units),
-                     sqrt = sprintf("sqrt(%s) sample quantiles", units),
-                     sprintf("%s sample quantiles", units))
-
-      p = ggplot2::ggplot(df_qq, ggplot2::aes(sample = value)) +
-            ggplot2::stat_qq(size = 2, alpha = 0.7) +
-            ggplot2::stat_qq_line(color = "#d62728", linewidth = 0.6) +
-            ggplot2::labs(x = "Theoretical normal quantiles",
-                          y = y_lab,
-                          title = sprintf("%s   (n = %d)%s",
-                                          compound, length(v), sw_lbl)) +
-            compound_theme
-    }
+    p = plot_qq(combined_datamatrices, compound, transform = tr,
+                sample_type_head = sample_type_head,
+                levels           = intensity_plot_levels,
+                value_label      = units)
 
     # Each compound's plot div uses the dropdown safe_id (alpha-list value);
     # its leading style remembers which compound is the alpha-first one.
@@ -432,13 +359,6 @@ if(is.null(res_pca$pr)){
   cat(sprintf("\n_PCA could not be fit on cleaned matrix (n_samples=%d, n_features=%d)._\n",
               res_pca$n_samples, res_pca$n_features))
 } else {
-  pr     = res_pca$pr
-  scores = as.data.frame(pr$x[, 1:min(2, ncol(pr$x))])
-  if(ncol(scores) < 2) scores$PC2 = 0
-  vexp = (pr$sdev^2) / sum(pr$sdev^2) * 100
-  vx = sprintf("PC1 (%.1f%%)", vexp[1])
-  vy = sprintf("PC2 (%.1f%%)", if(length(vexp) >= 2) vexp[2] else 0)
-
   # One tab per coloring listed in qc_pca.color_by
   cat("\n## QC PCA scatter plots {.tabset .tabset-fade}\n\n")
 
@@ -450,48 +370,15 @@ if(is.null(res_pca$pr)){
       next
     }
 
-    sc = scores
-    sc$.color = smeta_pca[[col_name]]
-    sc$.label = smeta_pca[[qc_pca_label_factor]] %||% rownames(sc)
-
-    is_num = is.numeric(sc$.color) ||
-             (suppressWarnings(!any(is.na(as.numeric(sc$.color)))) &&
-              col_name == injection_order_head)
-    if(is_num) sc$.color = as.numeric(sc$.color)
-
-    sc$.tooltip = sprintf("%s: %s<br>%s: %s<br>PC1: %.3g<br>PC2: %.3g",
-                          qc_pca_label_factor, sc$.label,
-                          col_name, as.character(sc$.color),
-                          sc$PC1, sc$PC2)
-
-    p = ggplot2::ggplot(sc, ggplot2::aes(PC1, PC2, text = .tooltip)) +
-          ggplot2::geom_point(ggplot2::aes(color = .color), size = 3, alpha = 0.85) +
-          ggplot2::labs(x = vx, y = vy, color = col_name) +
-          ggplot2::theme_classic(base_size = 13) +
-          ggplot2::theme(legend.position = "bottom")
-
-    # Continuous (injection_order_head, or any already-numeric column) →
-    # viridis_c; categorical (e.g. Sample_type, Chrom_Batch as factor) →
-    # Set1 brewer.
-    p = if(is_num) p + ggplot2::scale_color_viridis_c()
-        else       p + ggplot2::scale_color_brewer(palette = "Set1",
-                                                   na.value = "grey60")
-
-    if(qc_pca_ellipse == "group" && !is_num && length(unique(sc$.color)) > 1)
-      p = p + ggplot2::stat_ellipse(ggplot2::aes(group = .color),
-                                    type = "norm", level = 0.95, linewidth = 0.4)
-
-    if(qc_pca_label == "all"){
-      p = p + ggplot2::geom_text(ggplot2::aes(label = .label),
-                                 size = 2.5, vjust = -1, show.legend = FALSE)
-    } else if(qc_pca_label == "outliers"){
-      zx = scale(sc$PC1)[, 1]; zy = scale(sc$PC2)[, 1]
-      out_idx = abs(zx) > 2.5 | abs(zy) > 2.5
-      if(any(out_idx))
-        p = p + ggplot2::geom_text(data = sc[out_idx, ],
-                                   ggplot2::aes(label = .label),
-                                   size = 2.5, vjust = -1, show.legend = FALSE)
-    }
+    # Injection order is stored as character in some workbooks but is really a
+    # sequence, so force a continuous scale for it; everything else is decided
+    # from the column's own type.
+    p = plot_pca(res_pca, smeta_pca, colour_by = col_name,
+                 label         = qc_pca_label,
+                 label_factor  = qc_pca_label_factor,
+                 ellipse       = qc_pca_ellipse,
+                 numeric       = if(col_name == injection_order_head) TRUE
+                                 else NA)
 
     .show_plot(p, lock_aspect = TRUE, legend_below = TRUE,
                max_width = "650px", pixel_height = 650)
@@ -500,30 +387,25 @@ if(is.null(res_pca$pr)){
 }
 ```
 
-# 7. Final considerations {.tabset}
+# 7. Final considerations
 
-## Compounds included {-}
+Every compound the run started with, and whether it survived into the reported
+matrix. Exclusions include S/N or LOD/LOQ failures that left a feature entirely
+missing, features whose `Processing_name` had no rows in the source data, and
+source columns with no `feature_metadata` entry — filter the `Status` column to
+see one group at a time.
 
-```{r}
-DT::datatable(
-  combined_datamatrices$variable_meta %>% dplyr::select(Compound, Comment),
-  caption = "Summary of compounds included"
-)
+```{r feature-summary}
+feature_summary = summarise_features(combined_datamatrices, removed_features)
+
+DT::datatable(feature_summary, filter = "top",
+              options = list(pageLength = 25, scrollX = TRUE))
 ```
 
-## Compounds excluded {-}
-
-```{r}
-if(!is.null(removed_features) && nrow(removed_features) > 0){
-  DT::datatable(
-    removed_features %>% dplyr::select(Compound, Comment),
-    caption = paste0(
-      "Compounds excluded — includes S/N failures, all-NA features, and ",
-      "feature-metadata mismatches (no matching Processing_name / ID).")
-  )
-} else {
-  cat("_None recorded (typical when PeakMatrixProcessing.execute was False)._")
-}
+```{r feature-summary-note, results="asis"}
+if(is.null(removed_features) || nrow(removed_features) == 0)
+  cat("_No exclusions recorded (typical when PeakMatrixProcessing.execute",
+      "was False, since nothing was reprocessed)._")
 ```
 
 # 8. Session info

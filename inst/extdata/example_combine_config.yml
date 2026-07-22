@@ -127,6 +127,8 @@ stats_report:
     cluster_within_groups:  True
     rank_by:                log2fc       # 4.6 comparison-tab ranking: p_adj | p_value | log2fc
     feature_labels:         small        # show | small | hide  (inherited default)
+    cell_size:              auto         # auto | points (e.g. 10) - per-block overridable
+    cell_aspect:            1.5          # max cell width:height when cell_size is auto (1 = square)
 
     general:                             # 4.5 — all features retained
       enabled: True
@@ -137,6 +139,7 @@ stats_report:
       scope:   comparisons               # global | comparisons | all
       n_per_class: 10
       feature_labels: show               # override (focused subset -> show names)
+      cell_aspect: 1                     # few features -> keep cells square
 
     split_by_class:                      # 4.7 — heatmap per / across class value(s)
       enabled: False
@@ -145,6 +148,7 @@ stats_report:
       subclass_values: []                # focus values e.g. [COX, LOX]; empty = all
       multi_class: combined              # combined | tabs  (only matters for >1 value)
       feature_labels: show               # override (focused subset -> show names)
+      cell_aspect: 1                     # few features -> keep cells square
 
   # -- ion ratios  (enzyme-activity surrogates) --
   # Compound names must include the dataset tag prefix when prefix_features: True

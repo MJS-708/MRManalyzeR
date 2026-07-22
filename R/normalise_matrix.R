@@ -7,7 +7,7 @@
 #' @param de A `struct::DatasetExperiment`.
 #' @param column `sample_meta` column to divide by.
 #' @return `de` with each row of `data` divided by its per-sample divisor.
-#' @family workflow steps
+#' @family peak-matrix processing
 #' @examples
 #' de <- struct::DatasetExperiment(
 #'   data = data.frame(PGE2 = c(10, 20), PGD2 = c(30, 40),

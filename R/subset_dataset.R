@@ -22,7 +22,7 @@
 #'                  row.names = c("S1", "S2", "S3"))
 #' de <- struct::DatasetExperiment(data = m, sample_meta = sm, variable_meta = fm)
 #' subset_dataset(de, conditions = list(Group = "x"))
-#' @family analysis steps
+#' @family peak-matrix processing
 #' @export
 subset_dataset = function(de, conditions = NULL, features = NULL,
                      drop_empty_features = TRUE){

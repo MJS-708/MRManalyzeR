@@ -42,8 +42,11 @@ params <- list(comparisons = list(enabled = TRUE, entries = list(
 run_stats(de, params)$stats
 }
 \seealso{
-Other analysis steps:
-\code{\link[=run_pca]{run_pca()}},
-\code{\link[=subset_dataset]{subset_dataset()}}
+Other stats:
+\code{\link[=plot_boxplot]{plot_boxplot()}},
+\code{\link[=plot_correlation]{plot_correlation()}},
+\code{\link[=plot_heatmap]{plot_heatmap()}},
+\code{\link[=plot_volcano]{plot_volcano()}},
+\code{\link[=summarise_groups]{summarise_groups()}}
 }
-\concept{analysis steps}
+\concept{stats}

@@ -33,9 +33,12 @@ Imports:
     openxlsx,
     janitor,
     rmarkdown,
-    methods
-Suggests:
+    methods,
     ggplot2,
+    rlang,
+    grDevices,
+    pheatmap
+Suggests:
     ggrepel,
     plotly,
     DT,
@@ -43,8 +46,6 @@ Suggests:
     knitr,
     cowplot,
     gridExtra,
-    pheatmap,
-    RColorBrewer,
     BiocStyle,
     testthat (>= 3.0.0),
     withr

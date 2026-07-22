@@ -75,8 +75,12 @@ res <- run_pca(X, transform = "log2")
 res$steps
 }
 \seealso{
-Other analysis steps:
-\code{\link[=run_stats]{run_stats()}},
-\code{\link[=subset_dataset]{subset_dataset()}}
+Other QC check:
+\code{\link[=add_cv_metrics]{add_cv_metrics()}},
+\code{\link[=plot_drift]{plot_drift()}},
+\code{\link[=plot_loadings]{plot_loadings()}},
+\code{\link[=plot_pca]{plot_pca()}},
+\code{\link[=plot_qq]{plot_qq()}},
+\code{\link[=summarise_features]{summarise_features()}}
 }
-\concept{analysis steps}
+\concept{QC check}

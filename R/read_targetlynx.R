@@ -20,7 +20,7 @@
 #' xlsx <- system.file("extdata", "example_data.xlsx", package = "MRManalyzeR")
 #' m <- read_targetlynx(xlsx, datatype = "Area", snr = 3)
 #' dim(m)
-#' @family workflow steps
+#' @family data parse
 #' @export
 read_targetlynx = function(xlsx_path, datatype = "Area",
                            tl_headers = c("ID", "Name", "Area", "ng/mL", "Response", "S/N"),

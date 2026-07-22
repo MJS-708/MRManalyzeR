@@ -41,14 +41,12 @@ correct_batch(de, qc_label = "Sample", factor_name = "Sample_type",
               batch_head = "Chrom_Batch")
 }
 \seealso{
-Other workflow steps:
+Other peak-matrix processing:
 \code{\link[=adjust_concentration]{adjust_concentration()}},
-\code{\link[=assemble_dataset]{assemble_dataset()}},
 \code{\link[=filter_blanks]{filter_blanks()}},
 \code{\link[=impute_missing]{impute_missing()}},
 \code{\link[=normalise_matrix]{normalise_matrix()}},
 \code{\link[=process_dataset]{process_dataset()}},
-\code{\link[=read_skyline]{read_skyline()}},
-\code{\link[=read_targetlynx]{read_targetlynx()}}
+\code{\link[=subset_dataset]{subset_dataset()}}
 }
-\concept{workflow steps}
+\concept{peak-matrix processing}

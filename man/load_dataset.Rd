@@ -35,3 +35,12 @@ de <- struct::DatasetExperiment(
 f <- tempfile(fileext = ".RDS"); saveRDS(de, f)
 load_dataset(f)
 }
+\seealso{
+Other data parse:
+\code{\link[=assemble_dataset]{assemble_dataset()}},
+\code{\link[=combine_datasets]{combine_datasets()}},
+\code{\link[=load_config]{load_config()}},
+\code{\link[=read_skyline]{read_skyline()}},
+\code{\link[=read_targetlynx]{read_targetlynx()}}
+}
+\concept{data parse}

@@ -19,7 +19,7 @@
 #' fm <- data.frame(Processing_name = c("PGE2", "PGD2"), Report = "YES",
 #'                  row.names = c("PGE2", "PGD2"))
 #' read_skyline(f, "skyline_data", fm)
-#' @family workflow steps
+#' @family data parse
 #' @export
 read_skyline = function(xlsx_path, data_tab_names = "skyline_data",
                         feature_meta, signal_filter = FALSE){

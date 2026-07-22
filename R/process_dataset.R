@@ -82,7 +82,7 @@
 #'                        blank_filter = FALSE, bc_header = "Chrom_Batch",
 #'                        blank_head = "Sample_type")
 #' out[[1]]
-#' @family workflow steps
+#' @family peak-matrix processing
 #' @seealso [run_MRManalyzeR()] to drive the whole workflow from a YAML config.
 #' @export
 process_dataset = function(fdata,

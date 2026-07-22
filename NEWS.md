@@ -20,7 +20,9 @@
   by `process_dataset()`.
 * Per-compound quality metrics (`CV_QC`, `CV_sample` and their ratio) are
   written into the dataset's `variable_meta`.
-* A second bundled workbook, `example_batch_data.xlsx`, provides a two-batch
-  Skyline export with per-sample protein amounts and reconstitution volumes, so
-  normalisation, concentration adjustment and batch correction can be
-  demonstrated.
+* A second bundled dataset, `example_synthetic.xlsx` (plus the processed
+  `example_synthetic.RDS`), is entirely simulated from a fixed seed: two
+  chromatographic batches, per-sample protein amounts and reconstitution
+  volumes, and a planted treatment effect on 5 of its 20 analytes, so
+  normalisation, concentration adjustment, batch correction and the statistics
+  can each be demonstrated against a known truth.

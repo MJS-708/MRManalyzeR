@@ -54,6 +54,7 @@
 #' p1 <- file.path(d, "a.RDS"); saveRDS(mk(c("A", "B")), p1)
 #' p2 <- file.path(d, "c.RDS"); saveRDS(mk(c("C", "D")), p2)
 #' combine_datasets(c(A = p1, B = p2))
+#' @family data parse
 #' @export
 combine_datasets = function(paths,
                             feature_meta_cols   = NULL,

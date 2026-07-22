@@ -4,13 +4,16 @@
 \alias{append_stats_xlsx}
 \title{Append/replace stats sheets in the results xlsx}
 \usage{
-append_stats_xlsx(out_xlsx, stats_tables)
+append_stats_xlsx(out_xlsx, stats_tables, group_summary = NULL)
 }
 \arguments{
 \item{out_xlsx}{Path to the results xlsx (from `run_MRManalyzeR()`).}
 
 \item{stats_tables}{A list with elements `stats`, `correlations`,
-`linear_models` - as returned by [`run_stats()`].}
+`linear_models` and `ion_ratios` - as returned by [`run_stats()`].}
+
+\item{group_summary}{Optional data frame from [`summarise_groups()`],
+written as the `summary` tab. `NULL` skips it.}
 }
 \value{
 Invisibly, the path written.
@@ -21,6 +24,8 @@ Adds (or overwrites) the following tabs in the existing results xlsx:
   \item `stats`         - long table of comparisons + post-hoc.
   \item `correlations`  - long table of feature x feature correlations.
   \item `linear_models` - long table of `lm()` coefficients.
+  \item `ion_ratios`    - per-sample ion ratios with their group test.
+  \item `summary`       - n / mean / SD / SE per group per compound.
   \item `cor_<name>_<subset>_<method>` - one wide correlation matrix tab
         per (correlation x subset x method). Sheet names are sanitised
         and truncated to 31 characters (Excel limit).

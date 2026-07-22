@@ -28,20 +28,39 @@ starting volume, or `FALSE` to skip the starting-volume correction.}
 `de` with `data` scaled to concentration per sample.
 }
 \description{
-Concentrations read off a calibration curve assume every sample was prepared
-exactly like the calibration standards -- same final volume, same amount of
-internal standard. This corrects each sample for its own reconstitution
-volume and IS amount:
+A calibration curve returns the concentration in the vial, on the
+calibrant's terms: it was built at the calibrant's internal-standard
+concentration and assumes the sample carries the same one. This corrects
+that assumption:
 }
 \details{
 \deqn{conc \times (cal\_vol / sample\_vol) \times (sample\_IS / cal\_IS)}
 
-A larger reconstitution volume dilutes the analyte and lowers the corrected
-concentration; more internal standard added to the sample raises it back
-proportionally. When `starting_vol_col` is supplied, a second correction
-scales back to the concentration in the original, pre-dry-down sample
-(\eqn{conc \times sample\_vol / starting\_vol}), since mass is conserved
-through the dry-down and reconstitution step.
+The two ratios are one quantity, not two. They collapse to
+\deqn{(sample\_IS / sample\_vol) / (cal\_IS / cal\_vol)}
+which is the ratio of internal-standard *concentrations*, sample vial over
+calibrant vial. More vial volume per unit of IS means a more dilute IS, a
+smaller IS peak, an inflated analyte/IS response ratio and therefore a curve
+that reads high - so the factor falls below 1 and scales it back down.
+
+Reconstituting in more solvent is not itself corrected here, and does not
+need to be: it dilutes analyte and internal standard equally, so the
+response ratio and the curve's answer are unchanged. The reconstitution
+volume matters only through the IS concentration.
+
+When `starting_vol_col` is supplied, a second step scales back to the
+concentration in the original, pre-dry-down sample
+(\eqn{conc \times sample\_vol / starting\_vol}), mass being conserved
+through the dry-down. Following one analyte amount `A` through both steps,
+the curve reports \eqn{A / IS_{sample} \times [IS]_{cal}}, step one gives
+\eqn{A / sample\_vol} and step two \eqn{A / starting\_vol}: `sample_vol`
+cancels between them, as it must, since the result depends only on how much
+analyte was present and the volume of biofluid it came from.
+
+This all assumes IS-ratio quantification, as used by a targeted assay with
+stable-isotope standards. Applying it to a raw `Area` datatype carrying no
+internal-standard correction would break the assumption, because there the
+reconstitution volume does change the measured value.
 }
 \examples{
 de <- struct::DatasetExperiment(
@@ -57,14 +76,12 @@ de <- struct::DatasetExperiment(
 adjust_concentration(de)$data
 }
 \seealso{
-Other workflow steps:
-\code{\link[=assemble_dataset]{assemble_dataset()}},
+Other peak-matrix processing:
 \code{\link[=correct_batch]{correct_batch()}},
 \code{\link[=filter_blanks]{filter_blanks()}},
 \code{\link[=impute_missing]{impute_missing()}},
 \code{\link[=normalise_matrix]{normalise_matrix()}},
 \code{\link[=process_dataset]{process_dataset()}},
-\code{\link[=read_skyline]{read_skyline()}},
-\code{\link[=read_targetlynx]{read_targetlynx()}}
+\code{\link[=subset_dataset]{subset_dataset()}}
 }
-\concept{workflow steps}
+\concept{peak-matrix processing}

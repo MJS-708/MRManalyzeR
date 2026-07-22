@@ -6,6 +6,7 @@
 #' cfg <- load_config(system.file("extdata", "example_config.yml",
 #'                                package = "MRManalyzeR"))
 #' names(cfg$project)
+#' @family data parse
 #' @export
 load_config = function(path_yaml){
   yaml::read_yaml(

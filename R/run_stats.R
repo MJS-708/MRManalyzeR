@@ -27,7 +27,7 @@
 #'   list(name = "ctrl_vs_trt",
 #'        compare = list(factor = "Group", levels = c("ctrl", "trt"))))))
 #' run_stats(de, params)$stats
-#' @family analysis steps
+#' @family stats
 #' @export
 run_stats = function(de, st_params){
 
@@ -40,10 +40,13 @@ run_stats = function(de, st_params){
   p_adjust      = "BH"
   sig_threshold = st_params$sig_threshold %||% 0.05
 
+  ion_entries = .ion_entries(st_params$ion_ratios)
+
   list(
     stats         = .run_comparisons(de, comparisons,   p_adjust, sig_threshold),
     correlations  = .run_correlations(de, correlations, p_adjust, sig_threshold),
-    linear_models = .run_linear_models(de, linear_models, p_adjust, sig_threshold)
+    linear_models = .run_linear_models(de, linear_models, p_adjust, sig_threshold),
+    ion_ratios    = .run_ion_ratios(de, ion_entries, comparisons, p_adjust)
   )
 }
 
@@ -443,6 +446,21 @@ run_stats = function(de, st_params){
     section_name))
 }
 
+#' Entries of the `ion_ratios:` block
+#'
+#' Same contract as [.section_entries()], except this block names its list
+#' `ratios:` rather than `entries:`.
+#'
+#' @param section The `ion_ratios:` block, or `NULL`.
+#' @return A list of ratio specs; empty when absent or disabled.
+#' @keywords internal
+#' @noRd
+.ion_entries = function(section){
+  if(is.null(section)) return(list())
+  if(isFALSE(section$enabled)) return(list())
+  section$ratios %||% list()
+}
+
 #' @keywords internal
 #' @noRd
 .row = function(comp_name, method, feature, n_groups,
@@ -461,4 +479,108 @@ run_stats = function(de, st_params){
     p_adj = NA_real_, significant = NA,
     stringsAsFactors = FALSE
   )
+}
+
+
+# ---- Ion ratios ------------------------------------------------------------
+
+#' Per-sample ion ratios, with a group test per comparison
+#'
+#' Ion ratios are enzyme-activity surrogates: the ratio of a product to its
+#' precursor tracks flux through a pathway more directly than either compound
+#' alone, because it cancels the shared variation in how much substrate was
+#' there to begin with.
+#'
+#' Returns one row per sample per ratio. Rows carrying a `comparison` are that
+#' comparison's samples, with the group label and the group test attached
+#' (Wilcoxon for two levels, Kruskal-Wallis for more); rows with `comparison`
+#' `NA` are every sample, unscoped, for descriptive views.
+#'
+#' @param de A `struct::DatasetExperiment`.
+#' @param ratios The `ion_ratios$ratios` entries from the YAML - each a list
+#'   with `num`, `den` and optionally `label`.
+#' @param comparisons The comparison entries, as unpacked by
+#'   `.section_entries()`.
+#' @param p_adjust Adjustment method passed to [stats::p.adjust()].
+#' @return A long data frame, or a zero-row frame when no ratio is computable.
+#' @keywords internal
+#' @noRd
+.run_ion_ratios = function(de, ratios, comparisons, p_adjust = "BH"){
+
+  empty = data.frame(ratio = character(0), numerator = character(0),
+                     denominator = character(0), comparison = character(0),
+                     sample = character(0), group = character(0),
+                     value = numeric(0), method = character(0),
+                     statistic = numeric(0), p_value = numeric(0),
+                     p_adj = numeric(0), stringsAsFactors = FALSE)
+  if(length(ratios) == 0) return(empty)
+
+  dm  = as.data.frame(de$data)
+  out = list()
+
+  for(cfg in ratios){
+    num = as.character(cfg$num)
+    den = as.character(cfg$den)
+    lbl = as.character(cfg$label %||% paste0(num, " / ", den))
+
+    if(!num %in% colnames(dm) || !den %in% colnames(dm)) next
+
+    # Zero denominators give Inf; treat as missing rather than as a huge ratio.
+    val = as.numeric(dm[[num]]) / as.numeric(dm[[den]])
+    val[!is.finite(val)] = NA_real_
+    names(val) = rownames(dm)
+
+    out[[length(out) + 1]] = data.frame(
+      ratio = lbl, numerator = num, denominator = den,
+      comparison = NA_character_, sample = rownames(dm),
+      group = NA_character_, value = unname(val),
+      method = NA_character_, statistic = NA_real_,
+      p_value = NA_real_, p_adj = NA_real_, stringsAsFactors = FALSE)
+
+    for(comp in comparisons){
+      if(!isTRUE(comp$enabled %||% TRUE)) next
+      cond = if(is.null(comp$subset)) list() else as.list(comp$subset)
+      cond[[comp$compare$factor]] = comp$compare$levels
+      de_sub = tryCatch(subset_dataset(de, conditions = cond),
+                        error = function(e) NULL)
+      if(is.null(de_sub) || nrow(as.data.frame(de_sub$sample_meta)) == 0) next
+
+      rn  = rownames(as.data.frame(de_sub$data))
+      v   = val[rn]
+      grp = factor(as.data.frame(de_sub$sample_meta)[[comp$compare$factor]],
+                   levels = comp$compare$levels)
+
+      ngrp = length(comp$compare$levels)
+      tst = tryCatch({
+        if(ngrp == 2)
+          stats::wilcox.test(v[grp == comp$compare$levels[1]],
+                             v[grp == comp$compare$levels[2]], exact = FALSE)
+        else
+          stats::kruskal.test(v, grp)
+      }, error = function(e) NULL)
+
+      out[[length(out) + 1]] = data.frame(
+        ratio = lbl, numerator = num, denominator = den,
+        comparison = comp$name %||% "unnamed_comparison",
+        sample = rn, group = as.character(grp), value = unname(v),
+        method = if(ngrp == 2) "wilcoxon" else "kruskal",
+        statistic = if(is.null(tst)) NA_real_ else unname(tst$statistic),
+        p_value = if(is.null(tst)) NA_real_ else tst$p.value,
+        p_adj = NA_real_, stringsAsFactors = FALSE)
+    }
+  }
+
+  if(length(out) == 0) return(empty)
+  res = dplyr::bind_rows(out)
+
+  # One adjustment across the distinct ratio x comparison tests, not across
+  # the repeated per-sample rows that carry them.
+  keys = unique(res[!is.na(res$p_value), c("ratio", "comparison", "p_value")])
+  if(nrow(keys)){
+    keys$adj = stats::p.adjust(keys$p_value, method = p_adjust)
+    idx = match(paste(res$ratio, res$comparison),
+                paste(keys$ratio, keys$comparison))
+    res$p_adj = keys$adj[idx]
+  }
+  res
 }

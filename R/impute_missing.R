@@ -19,7 +19,7 @@
 #' @param blank_head `sample_meta` column identifying blank injections.
 #' @param blank_name Value in `blank_head` marking a blank injection.
 #' @return `de` with `data` imputed, in the original row order.
-#' @family workflow steps
+#' @family peak-matrix processing
 #' @examples
 #' de <- struct::DatasetExperiment(
 #'   data = data.frame(PGE2 = c(10, 5, NA), PGD2 = c(2, NA, 4),

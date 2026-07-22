@@ -87,3 +87,12 @@ p1 <- file.path(d, "a.RDS"); saveRDS(mk(c("A", "B")), p1)
 p2 <- file.path(d, "c.RDS"); saveRDS(mk(c("C", "D")), p2)
 combine_datasets(c(A = p1, B = p2))
 }
+\seealso{
+Other data parse:
+\code{\link[=assemble_dataset]{assemble_dataset()}},
+\code{\link[=load_config]{load_config()}},
+\code{\link[=load_dataset]{load_dataset()}},
+\code{\link[=read_skyline]{read_skyline()}},
+\code{\link[=read_targetlynx]{read_targetlynx()}}
+}
+\concept{data parse}

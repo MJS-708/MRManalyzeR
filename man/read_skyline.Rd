@@ -40,14 +40,11 @@ fm <- data.frame(Processing_name = c("PGE2", "PGD2"), Report = "YES",
 read_skyline(f, "skyline_data", fm)
 }
 \seealso{
-Other workflow steps:
-\code{\link[=adjust_concentration]{adjust_concentration()}},
+Other data parse:
 \code{\link[=assemble_dataset]{assemble_dataset()}},
-\code{\link[=correct_batch]{correct_batch()}},
-\code{\link[=filter_blanks]{filter_blanks()}},
-\code{\link[=impute_missing]{impute_missing()}},
-\code{\link[=normalise_matrix]{normalise_matrix()}},
-\code{\link[=process_dataset]{process_dataset()}},
+\code{\link[=combine_datasets]{combine_datasets()}},
+\code{\link[=load_config]{load_config()}},
+\code{\link[=load_dataset]{load_dataset()}},
 \code{\link[=read_targetlynx]{read_targetlynx()}}
 }
-\concept{workflow steps}
+\concept{data parse}

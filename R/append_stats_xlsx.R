@@ -5,6 +5,8 @@
 #'   \item `stats`         - long table of comparisons + post-hoc.
 #'   \item `correlations`  - long table of feature x feature correlations.
 #'   \item `linear_models` - long table of `lm()` coefficients.
+#'   \item `ion_ratios`    - per-sample ion ratios with their group test.
+#'   \item `summary`       - n / mean / SD / SE per group per compound.
 #'   \item `cor_<name>_<subset>_<method>` - one wide correlation matrix tab
 #'         per (correlation x subset x method). Sheet names are sanitised
 #'         and truncated to 31 characters (Excel limit).
@@ -14,10 +16,13 @@
 #'
 #' @param out_xlsx Path to the results xlsx (from `run_MRManalyzeR()`).
 #' @param stats_tables A list with elements `stats`, `correlations`,
-#'   `linear_models` - as returned by [`run_stats()`].
+#'   `linear_models` and `ion_ratios` - as returned by [`run_stats()`].
+#' @param group_summary Optional data frame from [`summarise_groups()`],
+#'   written as the `summary` tab. `NULL` skips it.
 #' @return Invisibly, the path written.
 #' @keywords internal
-append_stats_xlsx = function(out_xlsx, stats_tables){
+append_stats_xlsx = function(out_xlsx, stats_tables,
+                             group_summary = NULL){
 
   if(file.exists(out_xlsx)){
     wb = openxlsx::loadWorkbook(out_xlsx)
@@ -26,9 +31,13 @@ append_stats_xlsx = function(out_xlsx, stats_tables){
   }
 
   # 1. Long-format tabs
-  for(sheet_name in c("stats", "correlations", "linear_models")){
+  # Zero-row tables are skipped rather than written as a headers-only sheet:
+  # an empty tab says nothing except that the block was disabled, and it is
+  # easy to mistake for a run that failed.
+  for(sheet_name in c("stats", "correlations", "linear_models",
+                      "ion_ratios")){
     df = stats_tables[[sheet_name]]
-    if(is.null(df)) next
+    if(is.null(df) || nrow(df) == 0) next
     .write_or_replace(wb, sheet_name, df)
   }
 
@@ -47,6 +56,10 @@ append_stats_xlsx = function(out_xlsx, stats_tables){
       .write_or_replace(wb, .safe_sheet_name(sprintf("lm_%s", mn)), sub)
     }
   }
+
+  # 1d. Group summary - the numbers behind the boxplots / barplots.
+  if(!is.null(group_summary) && nrow(group_summary) > 0)
+    .write_or_replace(wb, "summary", group_summary)
 
   # 2. Wide-matrix tabs for correlations (one per subset x method x correlation)
   if(!is.null(stats_tables$correlations) && nrow(stats_tables$correlations) > 0){

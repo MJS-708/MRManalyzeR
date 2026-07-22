@@ -45,7 +45,7 @@
 #'             dimnames = list(paste0("S", 1:12), paste0("F", 1:5)))
 #' res <- run_pca(X, transform = "log2")
 #' res$steps
-#' @family analysis steps
+#' @family QC check
 #' @export
 run_pca = function(X,
                             impute        = c("min", "half_min", "frac_min", "none"),

@@ -43,8 +43,12 @@ de <- struct::DatasetExperiment(data = m, sample_meta = sm, variable_meta = fm)
 subset_dataset(de, conditions = list(Group = "x"))
 }
 \seealso{
-Other analysis steps:
-\code{\link[=run_pca]{run_pca()}},
-\code{\link[=run_stats]{run_stats()}}
+Other peak-matrix processing:
+\code{\link[=adjust_concentration]{adjust_concentration()}},
+\code{\link[=correct_batch]{correct_batch()}},
+\code{\link[=filter_blanks]{filter_blanks()}},
+\code{\link[=impute_missing]{impute_missing()}},
+\code{\link[=normalise_matrix]{normalise_matrix()}},
+\code{\link[=process_dataset]{process_dataset()}}
 }
-\concept{analysis steps}
+\concept{peak-matrix processing}

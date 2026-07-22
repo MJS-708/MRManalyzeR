@@ -139,16 +139,31 @@ run_MRManalyzeR = function(path_yaml){
   # --- Statistics ---------------------------------------------------------
   # Each stats section is a block with `enabled:` + `entries:`;
   # .section_entries() honours the toggle and returns the runnable entries.
-  stats_tables = NULL
+  stats_tables  = NULL
+  group_summary = NULL
   if(isTRUE(st_params$execute)){
     has_stats =
       length(.section_entries(st_params$comparisons,   "comparisons"))   > 0 ||
       length(.section_entries(st_params$correlations,  "correlations"))  > 0 ||
-      length(.section_entries(st_params$linear_models, "linear_models")) > 0
+      length(.section_entries(st_params$linear_models, "linear_models")) > 0 ||
+      length(.ion_entries(st_params$ion_ratios))                          > 0
     if(has_stats){
       message("Running statistics...")
       stats_tables = run_stats(combined_datamatrices, st_params)
-      append_stats_xlsx(out_stats_xlsx, stats_tables)
+
+      # Group summaries are what the boxplots and barplots are drawn from, so
+      # they belong in the workbook next to the tests.
+      gsf = st_params$global_summary_factor
+      if(!is.null(gsf) &&
+         gsf %in% colnames(as.data.frame(combined_datamatrices$sample_meta)))
+        group_summary = tryCatch(
+          summarise_groups(combined_datamatrices, gsf),
+          error = function(e){
+            warning("[run_MRManalyzeR] group summary skipped: ",
+                    conditionMessage(e)); NULL
+          })
+
+      append_stats_xlsx(out_stats_xlsx, stats_tables, group_summary)
       message("Wrote stats to: ", out_stats_xlsx)
     }
   }
@@ -292,7 +307,7 @@ run_MRManalyzeR = function(path_yaml){
   # labels (defaults if that block is absent).
   dq_cv = project_params$project$data_quality_report %||%
             project_params$project$UVA_report %||% list()
-  combined_datamatrices = .add_cv_metrics(
+  combined_datamatrices = add_cv_metrics(
     combined_datamatrices,
     sample_type_head = dq_cv$sample_type_head %||% "Sample_type",
     qc_label         = dq_cv$qc_label         %||% "QC",

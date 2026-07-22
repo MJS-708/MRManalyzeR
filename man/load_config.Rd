@@ -20,3 +20,12 @@ cfg <- load_config(system.file("extdata", "example_config.yml",
                                package = "MRManalyzeR"))
 names(cfg$project)
 }
+\seealso{
+Other data parse:
+\code{\link[=assemble_dataset]{assemble_dataset()}},
+\code{\link[=combine_datasets]{combine_datasets()}},
+\code{\link[=load_dataset]{load_dataset()}},
+\code{\link[=read_skyline]{read_skyline()}},
+\code{\link[=read_targetlynx]{read_targetlynx()}}
+}
+\concept{data parse}

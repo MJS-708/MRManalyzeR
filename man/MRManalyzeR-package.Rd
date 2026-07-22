@@ -13,27 +13,47 @@ calibration/internal-standard concentration adjustment, missing-value
 imputation and batch correction, then runs the statistical analyses and
 renders two self-contained HTML reports.
 }
+\details{
+The workflow falls into four stages. Everything from stage 1 onwards is
+carried in a single `struct::DatasetExperiment`, so each function takes that
+object and returns it.
+}
 \section{Entry points}{
 
-[run_MRManalyzeR()] drives the whole workflow from a single YAML config;
+[run_MRManalyzeR()] drives all four stages from a single YAML config;
 [run_MRManalyzeR_combine()] merges several acquisition panels into one
 analysis; [run_example()] runs the bundled example dataset end to end.
 }
 
-\section{Workflow steps}{
+\section{1. Data parse}{
 
-[read_targetlynx()] and [read_skyline()] read a workbook into a wide
-sample x compound matrix, which [assemble_dataset()] turns into a
-`struct::DatasetExperiment`. Every later step operates on that dataset:
-[filter_blanks()], [normalise_matrix()], [adjust_concentration()],
-[impute_missing()] and [correct_batch()]. [process_dataset()] composes them
-all, and [run_MRManalyzeR()] drives the whole workflow from a YAML config.
+What did the instrument report? [read_targetlynx()] and [read_skyline()]
+read a workbook into a wide sample x compound matrix, which
+[assemble_dataset()] turns into a `struct::DatasetExperiment`.
+[load_config()], [load_dataset()] and [combine_datasets()] read a YAML
+config, a stored dataset, and several datasets merged into one.
 }
 
-\section{Analysis and utilities}{
+\section{2. Peak-matrix processing}{
 
-[run_stats()], [run_pca()], [subset_dataset()], [combine_datasets()],
-[load_config()] and [load_dataset()].
+What is the true concentration? [filter_blanks()], [normalise_matrix()],
+[adjust_concentration()], [impute_missing()] and [correct_batch()], with
+[subset_dataset()] to slice a dataset by sample metadata.
+[process_dataset()] composes stages 1 and 2 in one call.
+}
+
+\section{3. QC check}{
+
+Can these numbers be trusted? [run_pca()], plus the per-compound CV metrics
+added to `variable_meta` by [run_MRManalyzeR()] and the bundled
+data-quality report.
+}
+
+\section{4. Stats}{
+
+What do these numbers mean? [run_stats()] runs the comparisons,
+correlations and linear models described by the YAML `stats_report:` block
+and returns the same tables the statistics report and the output xlsx use.
 
 See `vignette("MRManalyzeR")` for a step-by-step walkthrough.
 }

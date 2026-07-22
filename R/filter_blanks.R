@@ -11,7 +11,7 @@
 #' @param blank_head `sample_meta` column identifying blank injections.
 #' @param blank_name Value in `blank_head` marking a blank injection.
 #' @return `de` with sub-threshold values in `data` set to `NA`.
-#' @family workflow steps
+#' @family peak-matrix processing
 #' @examples
 #' de <- struct::DatasetExperiment(
 #'   data = data.frame(PGE2 = c(100, 90, 5), PGD2 = c(50, 60, 1),

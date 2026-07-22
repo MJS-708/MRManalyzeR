@@ -45,14 +45,12 @@ de <- struct::DatasetExperiment(
 impute_missing(de, scalar = 0.5)$data
 }
 \seealso{
-Other workflow steps:
+Other peak-matrix processing:
 \code{\link[=adjust_concentration]{adjust_concentration()}},
-\code{\link[=assemble_dataset]{assemble_dataset()}},
 \code{\link[=correct_batch]{correct_batch()}},
 \code{\link[=filter_blanks]{filter_blanks()}},
 \code{\link[=normalise_matrix]{normalise_matrix()}},
 \code{\link[=process_dataset]{process_dataset()}},
-\code{\link[=read_skyline]{read_skyline()}},
-\code{\link[=read_targetlynx]{read_targetlynx()}}
+\code{\link[=subset_dataset]{subset_dataset()}}
 }
-\concept{workflow steps}
+\concept{peak-matrix processing}

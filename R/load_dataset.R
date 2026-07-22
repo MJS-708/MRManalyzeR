@@ -22,6 +22,7 @@
 #'                              row.names = c("A", "B")))
 #' f <- tempfile(fileext = ".RDS"); saveRDS(de, f)
 #' load_dataset(f)
+#' @family data parse
 #' @export
 load_dataset = function(path, sample_id_col = "Sample_ID"){
 

@@ -7,26 +7,42 @@
 #' imputation and batch correction, then runs the statistical analyses and
 #' renders two self-contained HTML reports.
 #'
+#' The workflow falls into four stages. Everything from stage 1 onwards is
+#' carried in a single `struct::DatasetExperiment`, so each function takes that
+#' object and returns it.
+#'
 #' @section Entry points:
-#' [run_MRManalyzeR()] drives the whole workflow from a single YAML config;
+#' [run_MRManalyzeR()] drives all four stages from a single YAML config;
 #' [run_MRManalyzeR_combine()] merges several acquisition panels into one
 #' analysis; [run_example()] runs the bundled example dataset end to end.
 #'
-#' @section Workflow steps:
-#' [read_targetlynx()] and [read_skyline()] read a workbook into a wide
-#' sample x compound matrix, which [assemble_dataset()] turns into a
-#' `struct::DatasetExperiment`. Every later step operates on that dataset:
-#' [filter_blanks()], [normalise_matrix()], [adjust_concentration()],
-#' [impute_missing()] and [correct_batch()]. [process_dataset()] composes them
-#' all, and [run_MRManalyzeR()] drives the whole workflow from a YAML config.
+#' @section 1. Data parse:
+#' What did the instrument report? [read_targetlynx()] and [read_skyline()]
+#' read a workbook into a wide sample x compound matrix, which
+#' [assemble_dataset()] turns into a `struct::DatasetExperiment`.
+#' [load_config()], [load_dataset()] and [combine_datasets()] read a YAML
+#' config, a stored dataset, and several datasets merged into one.
 #'
-#' @section Analysis and utilities:
-#' [run_stats()], [run_pca()], [subset_dataset()], [combine_datasets()],
-#' [load_config()] and [load_dataset()].
+#' @section 2. Peak-matrix processing:
+#' What is the true concentration? [filter_blanks()], [normalise_matrix()],
+#' [adjust_concentration()], [impute_missing()] and [correct_batch()], with
+#' [subset_dataset()] to slice a dataset by sample metadata.
+#' [process_dataset()] composes stages 1 and 2 in one call.
+#'
+#' @section 3. QC check:
+#' Can these numbers be trusted? [run_pca()], plus the per-compound CV metrics
+#' added to `variable_meta` by [run_MRManalyzeR()] and the bundled
+#' data-quality report.
+#'
+#' @section 4. Stats:
+#' What do these numbers mean? [run_stats()] runs the comparisons,
+#' correlations and linear models described by the YAML `stats_report:` block
+#' and returns the same tables the statistics report and the output xlsx use.
 #'
 #' See `vignette("MRManalyzeR")` for a step-by-step walkthrough.
 #'
 #' @keywords internal
+#' @importFrom rlang .data
 #' @importFrom utils head
 #' @importFrom stats median
 #' @importFrom methods new
@@ -35,3 +51,113 @@
 
 # dplyr NSE column references used across the readers / assemble step.
 utils::globalVariables(c("ID", "ID2", "Name", "S/N", "Report", "Compound"))
+
+#' Shared plot theme
+#'
+#' One theme for every plot the package draws, so the two HTML reports and
+#' anything a user builds by calling the `plot_*()` functions directly look
+#' like the same suite.
+#'
+#' @return A `ggplot2` theme object.
+#' @keywords internal
+#' @noRd
+.mrm_theme = function(){
+  ggplot2::theme_classic() +
+    ggplot2::theme(
+      legend.position = "bottom",
+      axis.title = ggplot2::element_text(face = "bold", color = "black",
+                                         size = 12),
+      axis.text  = ggplot2::element_text(face = "bold", color = "black",
+                                         size = 8))
+}
+
+#' Vendored ltc colour palettes
+#'
+#' Hex values taken from the `ltc` palettes of Loukas Theodosiou
+#' (https://github.com/loukesio/ltc-color-palettes). They are inlined rather
+#' than depended on because `ltc` is distributed only on GitHub, and a
+#' Bioconductor package cannot require a remote install.
+#'
+#' `hat` is the qualitative palette used for categorical annotations - feature
+#' classes, sample types, batches - and `heatmap2` the diverging scheme used
+#' for z-scores and correlations.
+#'
+#' @keywords internal
+#' @noRd
+.ltc = list(
+  hat = c("#efb306", "#eb990c", "#e8351e", "#cd023d", "#852f88",
+          "#4e54ac", "#0f8096", "#7db954", "#17a769", "#000000"),
+  reading = c("#EFBC68", "#919F89", "#EDBDAE", "#57717C",
+              "#5F97A4", "#CAEAC8", "#95A1AE", "#C8CFD6"),
+  heatmap0 = c("#001219", "#005F73", "#0A9396", "#94D2BD", "#E9D8A6",
+               "#EE9B00", "#CA6702", "#AE2012", "#9B2226"),
+  heatmap2 = c("#ca0020", "#f4a582", "#f7f7f7", "#92c5de", "#0571b0")
+)
+
+#' Diverging colour ramp for z-scores and correlations
+#'
+#' `ltc` `heatmap2` reversed, so it runs low-blue to high-red in the direction
+#' these figures are read.
+#'
+#' @param n Number of steps.
+#' @return Character vector of `n` hex colours.
+#' @keywords internal
+#' @noRd
+.diverging_pal = function(n = 101){
+  grDevices::colorRampPalette(rev(.ltc$heatmap2))(n)
+}
+
+#' Qualitative palette for n categorical levels
+#'
+#' The vendored `ltc` `hat` palette, which carries ten distinguishable hues -
+#' more than Brewer's Set1 - and is interpolated beyond that.
+#'
+#' @param n Number of levels.
+#' @return Character vector of `n` colours.
+#' @keywords internal
+#' @noRd
+.qual_pal = function(n){
+  if(n < 1) return(character(0))
+  if(n <= length(.ltc$hat)) return(.ltc$hat[seq_len(n)])
+  grDevices::colorRampPalette(.ltc$hat)(n)
+}
+
+#' Named colour vector for the sorted levels of a categorical variable
+#'
+#' Keyed on sorted levels so a given level maps to the same colour wherever it
+#' appears - the heatmap feature annotation and the PCA loadings bars must
+#' agree, or the two figures cannot be read against each other. `NA` maps to
+#' grey; a two-level variable uses a fixed blue/red pair, which reads as an
+#' ordered contrast where an arbitrary pair would not.
+#'
+#' @param x Vector of level labels.
+#' @return Named character vector of colours.
+#' @keywords internal
+#' @noRd
+.group_fill_colors = function(x){
+  x  = as.character(x)
+  lv = sort(unique(x[!is.na(x) & x != "NA"]))
+  m  = if(length(lv) == 0)      character(0)
+       else if(length(lv) == 2) stats::setNames(
+                                  c(.ltc$hat[6], .ltc$hat[3]), lv)
+       else                     stats::setNames(.qual_pal(length(lv)), lv)
+  if(any(is.na(x) | x == "NA")) m = c(m, "NA" = "grey70")
+  m
+}
+
+#' Annotation colour list for pheatmap
+#'
+#' One named colour vector per annotation column, via
+#' [.group_fill_colors()] so a class keeps its colour across the heatmap
+#' annotation, the PCA loadings and the correlation strips.
+#'
+#' @param ann Annotation data frame, or `NULL`.
+#' @return A named list of colour vectors, or `NULL`.
+#' @keywords internal
+#' @noRd
+.ann_colours = function(ann){
+  if(is.null(ann)) return(NULL)
+  out = lapply(ann, .group_fill_colors)
+  names(out) = colnames(ann)
+  out
+}

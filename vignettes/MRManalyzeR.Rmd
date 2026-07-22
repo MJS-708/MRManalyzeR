@@ -18,7 +18,7 @@ vignette: >
 
 ```{r setup-knitr, include = FALSE}
 knitr::opts_chunk$set(comment = "#>", fig.width = 6.5, fig.height = 4,
-                      dpi = 100)
+                      dpi = 100, message = FALSE, warning = FALSE)
 
 # Tables are shown the way the HTML reports show them: searchable,
 # sortable and scrollable rather than truncated with head().
@@ -37,8 +37,8 @@ and the questions that remain are about **data quality** and the **accurate
 reporting of known metabolites** rather than about feature discovery.
 Normalisation to stable-isotope internal standards is commonplace, and reported
 values are true concentrations only once they have been adjusted for the
-volume each extract was reconstituted in and for the levels the calibration
-curve was built on.
+internal-standard concentration each vial actually carried and for the volume
+of sample the extract came from.
 
 MRManalyzeR is built around exactly that: assessing data quality on the way to
 accurate quantification, and giving a basic interpretation of the analytes that
@@ -51,10 +51,8 @@ analysts who do not write R.
 The package reads Waters **TargetLynx** exports (the primary format) and
 **Skyline** exports, and covers signal filtering, blank filtering,
 normalisation, concentration adjustment, missing-value imputation and batch
-correction, followed by statistics and two self-contained HTML reports.
-
-This vignette walks the workflow step by step on two bundled datasets, then
-shows the one-call YAML route that routine use actually takes.
+correction, followed by quality control, statistics and two self-contained HTML
+reports.
 
 ## How the package is organised
 
@@ -67,9 +65,9 @@ matching metadata table a second time.
 | Stage | Question it answers | Functions |
 |---|---|---|
 | 1. Data parse | What did the instrument report? | `read_targetlynx()`, `read_skyline()`, `assemble_dataset()`, `load_config()`, `load_dataset()`, `combine_datasets()` |
-| 2. Peak-matrix processing | What is the true concentration? | `filter_blanks()`, `normalise_matrix()`, `adjust_concentration()`, `impute_missing()`, `correct_batch()`, `process_dataset()` |
-| 3. QC check | Can these numbers be trusted? | `run_pca()`, per-compound CV metrics, the data-quality report |
-| 4. Stats | What do these numbers mean? | `subset_dataset()`, `run_stats()`, the statistics report |
+| 2. Peak-matrix processing | What is the true concentration? | `filter_blanks()`, `normalise_matrix()`, `adjust_concentration()`, `impute_missing()`, `correct_batch()`, `subset_dataset()`, `process_dataset()` |
+| 3. QC check | Can these numbers be trusted? | `add_cv_metrics()`, `summarise_features()`, `run_pca()`, `plot_drift()`, `plot_qq()`, `plot_pca()`, `plot_loadings()` |
+| 4. Stats | What do these numbers mean? | `run_stats()`, `summarise_groups()`, `plot_boxplot()`, `plot_volcano()`, `plot_heatmap()`, `plot_correlation()` |
 
 ```
    project_config.yml            workbook.xlsx
@@ -91,10 +89,12 @@ matching metadata table a second time.
                           processed DatasetExperiment
                             |          |          |
              [3] QC check   |          |          |   [4] Stats
-             CVs, drift,    |          |          |   run_stats():
-             Q-Q, QC-PCA    |          |          |   comparisons,
-                            |          |          |   correlations,
-                            |          |          |   linear models
+             add_cv_metrics |          |          |   summarise_groups
+             run_pca        |          |          |   run_stats
+             summarise_     |          |          |
+               features     |          |          |
+                            |          |          |
+              tables + plots|          |          |tables + plots
                             v          v          v
               data_quality       .xlsx  .RDS      stats_report
                 _report.html                      .html
@@ -102,9 +102,10 @@ matching metadata table a second time.
                                   _stats.xlsx
 ```
 
-The tables the statistics report shows and the tables written to
-`_stats.xlsx` are the same objects, computed once by `run_stats()` -- a figure
-and the spreadsheet beside it cannot disagree.
+Every number in a figure comes from the same table that is written to the
+spreadsheet -- `run_stats()`, `summarise_groups()` and `add_cv_metrics()`
+compute once, the `plot_*()` functions consume. A figure and the sheet beside
+it cannot disagree.
 
 # Installation
 
@@ -126,19 +127,22 @@ library(MRManalyzeR)
 
 # Quick start
 
-`run_example()` runs the whole workflow on the bundled dataset and writes its
+`run_example()` runs all four stages on the bundled dataset and writes its
 outputs to a temporary directory. `render = FALSE` builds the peak matrix and
 the xlsx/RDS outputs but skips the (slower) HTML report rendering; drop it to
-get the reports as well.
+get the reports as well. Running this successfully is the recommended check
+that an installation works before pointing the package at real data.
 
-```{r run-example, message = FALSE, warning = FALSE}
+```{r run-example}
 res <- run_example(render = FALSE, open = FALSE)
 list.files(attr(res, "results_dir"))
 ```
 
 Everything after this section unpacks what that single call did.
 
-# The input: a curated workbook
+# Stage 1: data parse
+
+## The curated workbook
 
 MRManalyzeR expects one `.xlsx` workbook holding the instrument export plus the
 two curation sheets that describe it:
@@ -152,6 +156,17 @@ two curation sheets that describe it:
 Keeping the curation next to the data is what makes a run reproducible: the
 decisions about which compounds are reportable and which injections belong to
 the study are recorded in the workbook, not in a script.
+
+Two practical rules govern whether a run will work at all:
+
+* **Names must match exactly.** `feature_metadata$Processing_name` has to match
+  the compound names in the acquisition method, and `sample_metadata$Name` has
+  to match the injection names in the data sheet -- including trailing spaces,
+  which are the usual culprit.
+* **Exclusions are recorded, not deleted.** An injection you do not want
+  analysed gets `Include = "NO"` rather than being removed; a compound that
+  should not be reported gets `Report = "NO"`. Re-injections are the common
+  case, and marking them keeps the workbook a faithful record of the run.
 
 ```{r dataset}
 xlsx  <- system.file("extdata", "example_data.xlsx",
@@ -176,8 +191,8 @@ Because the panel is known in advance, `feature_metadata` can carry real
 biology alongside the reporting decision -- the enzymatic pathway a compound
 comes from, its precursor PUFA, its retention time. Those columns are not
 decoration: they colour the PCA loadings, group the heatmap rows and define the
-ion ratios in the statistics report, and they travel with the data as
-`variable_meta` all the way to the output.
+ion ratios, and they travel with the data as `variable_meta` all the way to the
+output.
 
 ```{r dataset-features}
 dt(fdata[fdata$Report == "YES",
@@ -187,10 +202,12 @@ dt(fdata[fdata$Report == "YES",
 
 ## The TargetLynx export
 
-TargetLynx does not export a matrix. It writes a *stacked* sheet -- one block
-per compound, each block its own little table of injections, with the compound
-name buried in a header row between blocks. It is awkward to read by eye and
-worse to read programmatically, which is the first problem the package solves.
+TargetLynx does not export a matrix. Its "complete summary" (`Edit > Copy >
+Complete Summary`, pasted straight into the `lcms_data` sheet) is a *stacked*
+table -- one block per compound, each block its own little table of injections,
+with the compound name in a header row between blocks. It is awkward to read by
+eye and worse to read programmatically, which is the first problem the package
+solves.
 
 `read_targetlynx()` parses those blocks, pivots them into a wide
 **sample x compound** matrix of the requested `datatype` column, and (with
@@ -213,48 +230,48 @@ renamed without touching the analysis.
 `read_skyline()` returns the same contract from a Skyline molecule x sample
 sheet, with `signal_filter = "LOD"` or `"LOQ"` in place of the S/N mask.
 
-# The workflow, step by step
+## The simulated dataset used from here on
 
 The example above is a single chromatographic batch, injected from one
 reconstitution volume, with no per-sample amount to normalise to -- so
 normalisation, concentration adjustment and batch correction would all be
-no-ops on it. The package therefore bundles a second, deliberately messier
-workbook for this section: a Skyline export of the same compounds split across
-two chromatographic batches, with a per-sample protein amount and a different
-reconstitution volume per batch.
+no-ops on it. The package therefore bundles a second, **entirely simulated**
+workbook: a Skyline-layout export of 20 analytes across three enzymatic
+pathways, 54 injections split over two chromatographic batches, with a
+per-sample protein amount and a different reconstitution volume per batch.
 
-```{r batch-data}
-bxlsx <- system.file("extdata", "example_batch_data.xlsx",
+Nothing in it is measured data. It is generated from a fixed seed by
+`data-raw/make_example_synthetic.R` (which ships with the package source), and
+what it contains was deliberately planted so each step can be seen recovering
+something known: a response shift between the two batches, a treatment effect
+on 5 of the 20 analytes -- recorded in `feature_metadata$Simulated_log2FC` --
+and QC injections drawn with about 8 percent noise against 35 percent between
+animals. The study design is balanced across the batches, so the batch effect
+and the treatment effect are not confounded.
+
+```{r syn-data}
+sxlsx <- system.file("extdata", "example_synthetic.xlsx",
                      package = "MRManalyzeR")
-bfeat <- openxlsx::read.xlsx(bxlsx, sheet = "feature_metadata")
-bmeta <- openxlsx::read.xlsx(bxlsx, sheet = "sample_metadata")
+sfeat <- openxlsx::read.xlsx(sxlsx, sheet = "feature_metadata")
+smeta <- openxlsx::read.xlsx(sxlsx, sheet = "sample_metadata")
 
-table(bmeta$Chrom_Batch, bmeta$Sample_type)
+table(smeta$Chrom_Batch, smeta$Sample_type)
 ```
 
-The peak areas in it are real; the batch shift, protein amounts and volumes are
-simulated with a fixed seed so that each step below has something visible to do
-(the script that builds it, `data-raw/make_example_batch_data.R`, ships with the
-package source).
-
-## Read
-
-```{r step-read}
-bm <- read_skyline(bxlsx, "skyline_data", bfeat, signal_filter = "LOD")
-dim(bm)
-```
-
-## Assemble a DatasetExperiment
+## Assembling a DatasetExperiment
 
 `assemble_dataset()` aligns the matrix with its feature and sample metadata and
 returns a `struct::DatasetExperiment`. **Every step from here on takes and
 returns that object**, so the metadata travels with the data and no step has to
-be handed a matching sample table again:
+be handed a matching sample table again.
 
 ```{r step-assemble}
-de <- assemble_dataset(bm, bfeat, bmeta)
+sm <- read_skyline(sxlsx, "skyline_data", sfeat, signal_filter = "LOD")
+de <- assemble_dataset(sm, sfeat, smeta)
 de
 ```
+
+# Stage 2: peak-matrix processing
 
 ## Blank filter
 
@@ -283,23 +300,55 @@ round(as.data.frame(de$data)[1:3, 1:3], 3)
 ## Concentration adjustment
 
 A calibration curve returns the concentration *in the vial the instrument
-sampled*, built at the calibrant's volumes. `adjust_concentration()` puts each
-sample back on its own preparation:
+sampled*, and it does so on the calibrant's terms: the curve was built at the
+calibrant's internal-standard concentration, and it silently assumes your
+sample carries the same one. `adjust_concentration()` corrects that assumption:
 
 $$
 \text{conc} \times \frac{\text{cal vol}}{\text{sample vol}}
             \times \frac{\text{sample IS}}{\text{cal IS}}
 $$
 
-The first ratio corrects for **reconstitution**: an extract dried down and taken
-up in 100 uL is twice as dilute as the calibrant reconstituted in 50 uL, and
-that factor has to come back out. The second corrects for any difference in how
-much internal standard was spiked into the sample versus the calibrant.
+Those two ratios are one thing, not two. Multiply them out and they collapse to
+a single quantity:
 
-Setting `starting_vol_col` adds a further correction back to the concentration
-in the original, undried sample -- the plasma or lavage volume actually taken
-into extraction -- so results are reported per unit of biofluid rather than per
-vial.
+$$
+\frac{\text{cal vol}}{\text{sample vol}} \times
+\frac{\text{sample IS}}{\text{cal IS}}
+\;=\;
+\frac{\text{sample IS} / \text{sample vol}}{\text{cal IS} / \text{cal vol}}
+\;=\;
+\frac{[\text{IS}] \text{ in the sample vial}}
+     {[\text{IS}] \text{ in the calibrant vial}}
+$$
+
+So the correction is the ratio of internal-standard *concentrations*. More vial
+volume per unit of IS means the IS is more dilute in your sample than in the
+calibrant; a smaller IS peak inflates the analyte/IS response ratio, the curve
+reads high, and this factor -- below 1 -- scales it back down.
+
+Note what is *not* being corrected here. Reconstituting in more solvent dilutes
+the analyte and the internal standard equally, so the response ratio does not
+move and neither does the curve's answer. The reconstitution volume matters
+only through the IS concentration, which is exactly what the expression above
+captures. (This reasoning depends on quantification being IS-ratio based, as it
+is for a targeted assay with stable-isotope standards. Pointing `adjust_conc`
+at a raw `Area` datatype with no IS correction would break the assumption.)
+
+Setting `starting_vol_col` adds a second step, back to the concentration in the
+original, undried sample -- the plasma or lavage volume actually taken into
+extraction -- so results are reported per unit of biofluid rather than per vial.
+Following one analyte amount `A` through both steps:
+
+```
+  curve gives     conc_reported = (A / IS_sample) x [IS] in calibrant
+  step 1 gives    conc_vial     = A / sample_vol
+  step 2 gives    conc_original = A / starting_vol
+```
+
+`sample_vol` cancels between the two steps, and it should: the final number
+depends only on how much analyte was there and the volume of biofluid it came
+from, never on how much solvent you happened to reconstitute in.
 
 ```{r step-adjust}
 de <- adjust_concentration(de,
@@ -324,8 +373,8 @@ Other strategies are available where they matter most, in the PCA
 pre-processing (`run_pca(impute = )`), which offers `"none"`, `"min"`,
 `"half_min"` and `"frac_min"` alongside missing-value filters that drop
 features or samples above a missingness threshold instead of imputing them.
-For targeted panels the choice is rarely critical: a compound that is missing
-in most samples is usually better dropped than modelled.
+For targeted panels the choice is rarely critical: a compound missing in most
+samples is usually better dropped than modelled.
 
 ```{r step-impute}
 de <- impute_missing(de, scalar = 0.5, blank_head = "Sample_type",
@@ -339,17 +388,17 @@ Where an acquisition spans several days or columns, response can shift between
 batches. `correct_batch()` scales each batch so its per-feature median matches
 the grand median across the reference samples:
 
-```{r step-batch, message = FALSE, warning = FALSE}
+```{r step-batch}
 batch     <- stats::setNames(de$sample_meta$Chrom_Batch,
                              rownames(as.data.frame(de$data)))
 de_uncorr <- de
 
-de <- correct_batch(de, qc_label = "Sample",
+de <- correct_batch(de, qc_label = "QC",
                     factor_name = "Sample_type",
                     batch_head  = "Chrom_Batch")
 ```
 
-Taking the first compound as an example, the two batch medians are pulled
+Taking the first analyte as an example, the two batch medians are pulled
 together:
 
 ```{r step-batch-medians}
@@ -365,14 +414,14 @@ the batches are biologically comparable.
 
 ## The whole matrix in one call
 
-`process_dataset()` composes exactly those steps -- read, assemble, then filter
-/ normalise / adjust / impute within each acquisition batch, then batch-correct
+`process_dataset()` composes stages 1 and 2 -- read, assemble, then filter /
+normalise / adjust / impute within each acquisition batch, then batch-correct
 -- driven by the same metadata sheets:
 
-```{r step-process, message = FALSE, warning = FALSE}
+```{r step-process}
 out <- process_dataset(
-  bfeat, bmeta,
-  xlsx_path        = bxlsx,
+  sfeat, smeta,
+  xlsx_path        = sxlsx,
   data_source      = "skyline",
   data_tab_names   = "skyline_data",
   signal_filter    = "LOD",
@@ -382,43 +431,41 @@ out <- process_dataset(
   starting_vol_col = "starting_vol_uL",
   replace_MVs      = 0.5,
   batch_correction = TRUE,
-  bc_qc_label      = "Sample",
+  bc_qc_label      = "QC",
   bc_header        = "Chrom_Batch",
   blank_head       = "Sample_type")
 
 dim(out[[1]]$data)
 ```
 
-`out[[2]]` holds the features that were dropped along the way with the reason
-recorded -- the same table the data-quality report surfaces as "compounds
-excluded".
+`out[[2]]` holds the features dropped along the way with the reason recorded --
+the same table the data-quality report surfaces as "compounds excluded", and
+the first place to look when a compound you expected is missing from the
+output.
 
-# Outputs
+The processed dataset also ships ready-made, which is what the rest of this
+vignette uses:
 
-## The processed matrix
-
-The processed dataset is written as `.xlsx` (for anyone downstream who does not
-use R) and as `.RDS` (the `DatasetExperiment`, for anyone who does). Rows are
-injections, columns are the reported compounds:
-
-```{r out-matrix}
-de_full <- res$datasetExperiment
-dim(de_full$data)
+```{r syn-load}
+syn <- load_dataset(system.file("extdata", "example_synthetic.RDS",
+                                package = "MRManalyzeR"))
+dim(syn$data)
 ```
 
-```{r out-matrix-table}
-dt(round(as.data.frame(de_full$data)[, 1:6], 2))
-```
+# Stage 3: QC check
 
-## Feature metadata: how well was each compound measured?
+## How well was each compound measured?
 
-The per-compound quality metrics are written back into `variable_meta`, matched
-to the feature they describe, so annotation and quality live in the same table:
+`add_cv_metrics()` writes the per-compound quality metrics into
+`variable_meta`, matched to the feature they describe, so annotation and
+quality live in the same table. `run_MRManalyzeR()` applies it to every run.
 
-```{r out-cv}
-vm <- as.data.frame(de_full$variable_meta)
-cv <- vm[, c("Compound", "Enzymatic_pathway", "CV_QC",
-             "CV_sample", "CV_sample_vs_QC")]
+```{r qc-cv}
+syn <- add_cv_metrics(syn, qc_label = "QC")
+
+cv <- as.data.frame(syn$variable_meta)[
+  , c("Compound", "Enzymatic_pathway", "CV_QC", "CV_sample",
+      "CV_sample_vs_QC")]
 
 dt(cv[order(cv$CV_QC), ], rownames = FALSE, page = 10)
 ```
@@ -431,86 +478,68 @@ dt(cv[order(cv$CV_QC), ], rownames = FALSE, page = 10)
   It is `NA` when a run contains no QC injections.
 * **`CV_sample`** is the same statistic across the biological samples, so it
   carries the **biological** spread *plus* that same technical noise.
-* **`CV_sample_vs_QC`** is `CV_sample / CV_QC`, putting the two side by side.
-  A ratio comfortably above 1
+* **`CV_sample_vs_QC`** is `CV_sample / CV_QC`. A ratio comfortably above 1
   means the biological signal is larger than the noise it is measured against
   -- the compound has room to show a real difference. A ratio near 1 means a
-  compound is varying no more between animals than it does between replicate
-  injections of identical material: whatever passed the CV~QC~ filter, there is
-  little biology left to find in it. Sorting the panel by this ratio is a quick
-  way to see which analytes are worth interpreting before running any test.
+  compound is varying no more between animals than between replicate injections
+  of identical material: whatever passed the CV~QC~ filter, there is little
+  biology left to find in it. Sorting the panel by this ratio is a quick way to
+  see which analytes are worth interpreting before running any test.
 
-## The reports
+## Analytical drift
 
-The data-quality report is the visual half of that assessment. It covers the
-run summary and excluded compounds, the CV table above, per-compound intensity
-against injection order (analytical drift), Q-Q plots for normality under
-several transforms, and a QC-PCA. Its central question is whether the QC
-injections cluster tightly and sit stable across the run -- if they do, the
-separation seen between study groups can be trusted.
+`plot_drift()` puts one compound's response against acquisition order, coloured
+by sample type so the pooled QCs can be tracked through the sequence. A trend,
+a step or a widening spread in the QCs is instrumental, not biological.
 
-Drift is read directly off injection order, with the QCs tracked through the
-sequence:
-
-```{r qc-drift, message = FALSE, warning = FALSE}
-smeta <- as.data.frame(de_full$sample_meta)
-dmat  <- as.data.frame(de_full$data)
-
-target <- names(sort(colSums(!is.na(dmat)), decreasing = TRUE))[1]
-drift  <- data.frame(order = as.numeric(smeta$Injection_order),
-                     type  = smeta$Sample_type,
-                     value = dmat[[target]])
-
-ggplot2::ggplot(drift,
-                ggplot2::aes(order, value, colour = type)) +
-  ggplot2::geom_point(size = 1.8, na.rm = TRUE) +
-  ggplot2::scale_colour_viridis_d(end = 0.85) +
-  ggplot2::labs(x = "Injection order", y = target, colour = NULL) +
-  ggplot2::theme_bw()
+```{r qc-drift}
+plot_drift(syn, "Analyte_02", value_label = "ng/mL")
 ```
 
-The QC-PCA asks the same question in the multivariate space the statistics will
-use. `run_pca()` takes the dataset, applies the missing-value filtering,
-imputation, transform, centring and scaling, and returns the fit together with a
-readable trace of what it did:
+## Normality
 
-```{r qc-pca, message = FALSE, warning = FALSE}
-pca <- run_pca(de_full, impute = "frac_min", impute_frac = 0.2,
+`plot_qq()` asks whether a compound's distribution supports the parametric
+tests. Points along the line mean the t-test is on safe ground; a curve means
+the Wilcoxon result reported alongside it is the one to trust. Targeted panels
+are frequently right-skewed, which is why the report renders a tab per
+transform rather than picking one.
+
+```{r qc-qq, fig.width = 5, fig.height = 4}
+plot_qq(syn, "Analyte_02", transform = "log2", levels = "Sample")
+```
+
+## PCA
+
+`run_pca()` applies the missing-value filtering, imputation, transform,
+centring and scaling, and returns the fit together with a readable trace of
+what it did. `plot_pca()` draws the scores.
+
+```{r qc-pca}
+pca <- run_pca(syn, impute = "frac_min", impute_frac = 0.2,
                transform = "log2", feat_na_max = 0.6,
                sample_na_max = 0.6)
 pca$steps
 ```
 
-```{r qc-pca-plot, message = FALSE, warning = FALSE}
-scores <- data.frame(
-  pca$pr$x[, 1:2],
-  type = smeta[rownames(pca$pr$x), "Sample_type"])
+The colouring is the whole point: the same scores answer a different question
+depending on what you colour them by. The report draws one plot per column
+listed under `qc_pca.color_by`.
 
-ggplot2::ggplot(scores, ggplot2::aes(PC1, PC2, colour = type)) +
-  ggplot2::geom_point(size = 2) +
-  ggplot2::scale_colour_viridis_d(end = 0.85) +
-  ggplot2::labs(colour = NULL) +
-  ggplot2::theme_bw()
+```{r qc-pca-type, fig.height = 4.2}
+plot_pca(pca, syn, colour_by = "Sample_type")
 ```
 
-The report draws one PCA per factor named under `qc_pca.color_by`, because the
-same scores answer different questions depending on what you colour them by.
-Colouring by chromatographic batch is the sharpest of these: if the batches
-separate, the variance driving component 1 is analytical, not biological. The
-example above is a single-batch run, so use the two-batch workbook -- before and
-after `correct_batch()`:
+Colouring by chromatographic batch is the sharpest of these -- if the batches
+separate, the variance driving component 1 is analytical rather than
+biological. This dataset had a batch shift planted in it, so here is the same
+PCA before and after `correct_batch()`:
 
-```{r qc-pca-batch, message = FALSE, warning = FALSE, fig.height = 3.4}
+```{r qc-pca-batch, fig.height = 3.4}
 pca_by_batch <- function(x, title){
   p <- run_pca(x, impute = "frac_min", impute_frac = 0.2,
                transform = "log2")
-  df <- data.frame(p$pr$x[, 1:2],
-                   batch = batch[rownames(p$pr$x)])
-  ggplot2::ggplot(df, ggplot2::aes(PC1, PC2, colour = batch)) +
-    ggplot2::geom_point(size = 2) +
-    ggplot2::scale_colour_viridis_d(end = 0.75) +
-    ggplot2::labs(title = title, colour = "Chrom_Batch") +
-    ggplot2::theme_bw()
+  plot_pca(p, x, colour_by = "Chrom_Batch") +
+    ggplot2::labs(title = title)
 }
 
 cowplot::plot_grid(
@@ -519,65 +548,161 @@ cowplot::plot_grid(
   nrow = 1)
 ```
 
-In the rendered HTML reports these plots are interactive (hover a point for the
-sample behind it) and every table is a searchable, sortable, downloadable
-`DT::datatable()` like the ones in this vignette.
+## Loadings
 
-# Statistics
+The scores say *whether* samples separate; `plot_loadings()` says *which
+compounds* drove it. Colouring by the enzymatic pathway is what turns a ranked
+list into something interpretable -- the palette is shared with the heatmap
+annotation, so a class is the same colour in every figure.
 
-`subset_dataset()` slices the dataset by any `sample_meta` condition, which is
-how the biological samples are separated from the QCs and blanks before
-testing:
+```{r qc-loadings, fig.width = 7, fig.height = 5}
+plot_loadings(pca, syn, colour_by = "Enzymatic_pathway")
+```
+
+## What was reported, and what was dropped
+
+```{r qc-features}
+dt(summarise_features(syn, out[[2]]), rownames = FALSE)
+```
+
+# Stage 4: statistics
+
+## Selecting the biological samples
+
+`subset_dataset()` slices by any `sample_meta` condition, which is how the
+study samples are separated from the QCs and blanks before testing:
 
 ```{r stats-subset}
-samples <- subset_dataset(de_full,
+samples <- subset_dataset(syn,
                           conditions = list(Sample_type = "Sample"))
 
 table(samples$sample_meta$Treatment, samples$sample_meta$Type)
 ```
 
-`run_stats()` then runs the comparisons, correlations and linear models
+## Group summaries
+
+`summarise_groups()` is the table the box and bar plots are drawn from, and it
+is written to the `summary` sheet of the stats workbook. Both SD and SE are
+returned: SD describes the spread of the animals, SE how well the mean is
+pinned down, and the choice belongs to the reader.
+
+```{r stats-summary}
+gs <- summarise_groups(samples, "Treatment")
+dt(cbind(gs[, 1:3], round(gs[, 4:6], 3)), rownames = FALSE)
+```
+
+## Comparisons
+
+`run_stats()` runs the comparisons, correlations, linear models and ion ratios
 described by the `stats_report:` block of the YAML and returns tidy tables. The
 method is chosen from the design rather than by the user: two levels get a
 t-test and a Wilcoxon test, three or more get ANOVA and Kruskal-Wallis with
-Tukey and pairwise-Wilcoxon post-hoc tests, and p-values are FDR-adjusted
-within each comparison.
+Tukey and pairwise-Wilcoxon post-hoc tests, and p-values are FDR-adjusted.
 
-```{r stats-run, message = FALSE, warning = FALSE}
-comparison <- list(
-  name    = "PBS_vs_HDM_in_WT",
-  subset  = list(Type = "WT"),
-  compare = list(factor = "Treatment",
-                 levels = c("PBS", "HDM")))
+Reporting a parametric and a non-parametric test side by side is deliberate:
+targeted panels are frequently run on small groups where normality cannot be
+taken on trust, and agreement between the two is itself a piece of evidence.
 
+```{r stats-run}
 params <- list(
   sig_threshold = 0.05,
-  comparisons   = list(enabled = TRUE,
-                       entries = list(comparison)))
+  comparisons = list(enabled = TRUE, entries = list(
+    list(name    = "PBS_vs_HDM",
+         compare = list(factor = "Treatment",
+                        levels = c("PBS", "HDM"))))),
+  ion_ratios = list(enabled = TRUE, ratios = list(
+    list(num = "Analyte_02", den = "Analyte_05",
+         label = "A02/A05"))))
 
 st <- run_stats(samples, params)
 ```
 
-```{r stats-table}
-tab <- st$stats[, c("feature", "method", "mean_g1", "mean_g2",
-                    "log2FC", "p_value", "p_adj", "significant")]
-tab[, 3:7] <- round(tab[, 3:7], 4)
+Because the effects in this dataset were planted, the recovered fold changes
+can be checked against the truth:
 
-dt(tab[order(tab$p_value), ], rownames = FALSE, page = 10)
+```{r stats-truth}
+tt <- st$stats[st$stats$method == "t_test",
+               c("feature", "log2FC", "p_value", "p_adj")]
+truth <- as.data.frame(syn$variable_meta)[, c("Compound",
+                                              "Simulated_log2FC")]
+chk <- merge(tt, truth, by.x = "feature", by.y = "Compound")
+chk <- chk[order(-abs(chk$Simulated_log2FC), chk$p_value), ]
+
+dt(cbind(chk[, 1], round(chk[, -1], 4)), rownames = FALSE, page = 8)
 ```
 
-Reporting both a parametric and a non-parametric test side by side is
-deliberate: targeted panels are frequently run on small groups where normality
-cannot be taken on trust, and agreement between the two is itself a piece of
-evidence.
+The five analytes with a non-zero `Simulated_log2FC` should carry the largest
+recovered effects and the smallest p-values; the other fifteen should scatter
+around zero.
 
-The statistics report renders these tables alongside the visual half of the
-same analysis: per-compound box and bar plots by study factor, PCA with group
-ellipses and annotated loadings, volcano plots per comparison, heatmaps
-(all features, top-changing features, and split by compound class),
-feature-feature correlation heatmaps, linear-model coefficient tables and ion
-ratios for enzyme-activity surrogates. The tables are also appended to a
-`_stats.xlsx` next to the processed matrix.
+## Per-compound plots
+
+```{r stats-box, fig.width = 5, fig.height = 4}
+plot_boxplot(samples, "Analyte_02", "Treatment",
+             value_label = "ng/mL")
+```
+
+`type = "bar"` draws the group means and error bars from `summarise_groups()`,
+so the figure and the `summary` sheet cannot drift apart:
+
+```{r stats-bar, fig.width = 5, fig.height = 4}
+plot_boxplot(samples, "Analyte_02", "Treatment", type = "bar",
+             error_bar = "SE", value_label = "ng/mL")
+```
+
+## Volcano
+
+Effect size against significance. A large fold change on three noisy animals is
+not a finding, and a tiny but reproducible shift is rarely interesting either;
+the compounds worth attention sit in the upper corners.
+
+```{r stats-volcano, fig.width = 5.5, fig.height = 5}
+plot_volcano(st, "PBS_vs_HDM", sig_threshold = 0.05)
+```
+
+## Heatmap
+
+Where the comparisons test one compound at a time, the heatmap shows the whole
+panel at once -- which is how you see that a treatment moved an entire pathway
+rather than a few compounds that happened to clear a threshold.
+
+```{r stats-heatmap, fig.width = 7.5, fig.height = 6}
+plot_heatmap(samples,
+             color_samples_by  = "Treatment",
+             group_features_by = "Enzymatic_pathway",
+             transform         = "log2",
+             title             = "All analytes")
+```
+
+## Feature correlations
+
+Which compounds move *together*, which in a targeted panel usually means they
+share a branch of the pathway -- so blocks along the diagonal are the pathway
+structure showing itself.
+
+```{r stats-corr, fig.width = 6.5, fig.height = 6}
+cp <- list(correlations = list(enabled = TRUE, entries = list(
+  list(name = "pairs", methods = "spearman",
+       subsets = list(list())))))
+
+plot_correlation(run_stats(samples, cp), samples,
+                 group_by = "Enzymatic_pathway")
+```
+
+## Ion ratios
+
+An ion ratio is an enzyme-activity surrogate: the ratio of a product to its
+precursor tracks flux through a pathway more directly than either compound
+alone, because it cancels the shared variation in how much substrate was there.
+`run_stats()` returns the per-sample ratios with a group test attached, so they
+reach the `ion_ratios` sheet as well as the report.
+
+```{r stats-ratios}
+ir <- st$ion_ratios[!is.na(st$ion_ratios$comparison), ]
+dt(cbind(ir[, c("ratio", "comparison", "sample", "group")],
+         round(ir[, c("value", "p_value")], 4)),
+   rownames = FALSE)
+```
 
 # Driving it from a YAML config
 
@@ -585,7 +710,7 @@ In routine use none of the above is typed out. One YAML file describes the data
 source, every processing step and both reports, and one call runs it:
 
 ```{r run-yaml, eval = FALSE}
-run_MRManalyzeR("path/to/your_config.yml")
+res <- run_MRManalyzeR("path/to/your_config.yml")
 ```
 
 The bundled reference configuration is a commented template to copy and edit:
@@ -594,8 +719,8 @@ The bundled reference configuration is a commented template to copy and edit:
 system.file("extdata", "example_config.yml", package = "MRManalyzeR")
 ```
 
-Its `PeakMatrixProcessing:` block is a one-to-one map of the steps above -- each
-key switches a step on or names the metadata column it should use:
+Its `PeakMatrixProcessing:` block is a one-to-one map of stage 2 -- each key
+switches a step on or names the metadata column it should use:
 
 ```yaml
 PeakMatrixProcessing:
@@ -615,11 +740,11 @@ PeakMatrixProcessing:
   blank_head: 'Sample_type'
   blank_name: 'Blank'
 
-  normalize: protein_ug          # False | sample_metadata column to divide by
+  normalize: protein_ug          # False | sample_metadata column
 
   adjust_conc:
     enabled: True
-    starting_vol_col: starting_vol_uL   # False to skip the reconstitution step
+    starting_vol_col: starting_vol_uL
     sample_vol_col:   sample_volume_uL
     cal_vol_col:      cal_vol_uL
     sample_IS_col:    sample_IS_vol_uL
@@ -632,14 +757,34 @@ PeakMatrixProcessing:
   bc_header: "Chrom_Batch"
 ```
 
-The `data_quality_report:` and `stats_report:` blocks configure the two reports
-in the same declarative way -- which column identifies QCs, which factors to
-compare, which plots to draw. See the bundled file for the fully commented set.
+`data_quality_report:` and `stats_report:` configure stages 3 and 4 in the same
+declarative way -- which column identifies QCs, which factors to compare, which
+plots to draw. See the bundled file for the fully commented set.
 
 Outputs are written next to your data: the processed matrix as `.xlsx` and
-`.RDS`, a `_stats.xlsx` of comparisons, correlations and linear models, and the
-two self-contained HTML reports. `run_MRManalyzeR_combine()` is the equivalent
-entry point for merging several acquisition panels into a single analysis.
+`.RDS`, a `_stats.xlsx` carrying `stats`, `correlations`, `linear_models`,
+`ion_ratios` and `summary`, the two self-contained HTML reports, and a text
+file recording the exact parameters used.
+
+## Merging several acquisition panels
+
+Where a study is split across methods -- a polar-acid and a polar-basic panel,
+say -- each is processed on its own with `run_MRManalyzeR()` first, and the
+resulting `.RDS` files are merged:
+
+```{r run-combine, eval = FALSE}
+file.copy(
+  system.file("extdata", "example_combine_config.yml",
+              package = "MRManalyzeR"),
+  "combine_config.yml")
+
+res <- run_MRManalyzeR_combine("combine_config.yml")
+```
+
+Two things decide whether a merge succeeds: `sample_id_col` must name an
+identifier that is stable across the panels (not the acquisition `Name`, which
+usually carries a method-specific prefix), and each dataset's `tag` prefixes
+its feature names so that a compound measured on two methods does not collide.
 
 # References {#references}
 
