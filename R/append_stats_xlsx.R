@@ -108,7 +108,8 @@ append_stats_xlsx = function(out_xlsx, stats_tables,
   if(nrow(key) == 0) return(invisible(NULL))
 
   .write_or_replace(wb, "key", key)
-  openxlsx::setColWidths(wb, "key", cols = 1:3, widths = c(20, 22, 105))
+  openxlsx::setColWidths(wb, "key", cols = seq_len(3),
+                         widths = c(20, 22, 105))
   openxlsx::addStyle(wb, "key",
                      openxlsx::createStyle(wrapText = TRUE, valign = "top"),
                      rows = seq_len(nrow(key)) + 1L, cols = 3,

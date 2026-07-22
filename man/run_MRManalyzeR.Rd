@@ -2,7 +2,7 @@
 % Please edit documentation in R/run_MRManalyzeR.R
 \name{run_MRManalyzeR}
 \alias{run_MRManalyzeR}
-\title{Run the end-to-end MRManalyzeR workflow from a YAML config}
+\title{Run the post-acquisition MRManalyzeR workflow from a YAML config}
 \usage{
 run_MRManalyzeR(path_yaml)
 }

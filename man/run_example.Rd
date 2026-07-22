@@ -22,8 +22,8 @@ viewer after rendering? Default `TRUE` in interactive sessions.}
 a quick smoke test of the processing workflow.}
 }
 \value{
-Invisibly, the list returned by [`run_MRManalyzeR()`]; the
-  resolved results directory is attached as attribute `"results_dir"`.
+Invisibly, the list returned by [`run_MRManalyzeR()`], whose
+  `output_directory` element is the resolved results directory.
 }
 \description{
 Convenience wrapper that drives the full workflow against the bundled
@@ -37,7 +37,7 @@ run the generated HTML reports are opened in interactive sessions.
 \examples{
 # Light run: build the peak matrix + outputs, skip HTML report rendering.
 res <- run_example(render = FALSE, open = FALSE)
-attr(res, "results_dir")   # where the xlsx + rds landed
+res$output_directory       # where the xlsx + rds landed
 }
 \seealso{
 Other entry points:

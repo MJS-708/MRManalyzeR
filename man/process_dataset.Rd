@@ -143,7 +143,9 @@ raw name that joins to the source data. Defaults `"Compound"` /
 
 \item{report_col, report_value}{`feature_metadata` inclusion filter: features
 where `fdata[[report_col]] == report_value` are reported. Defaults
-`"Report"` / `"YES"`.}
+`"Report"` / `"YES"`. Optional - when `report_col` is not a column of
+`fdata` every feature is reported, which is the normal case for a feature
+table curated outside a TargetLynx workflow.}
 
 \item{comment_col}{`feature_metadata` column used to record why a feature
 was excluded. Default `"Comment"`.}
