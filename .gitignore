@@ -5,6 +5,9 @@
 CLAUDE.md
 .claude/
 
+# Scratch figures (logo / workflow drafts) — keep local only
+man/figures/
+
 # Session Data files
 .RData
 .RDataTmp
@@ -52,3 +55,12 @@ temp_res/
 # RStudio Connect folder
 rsconnect/
 combine_data_helpers.R
+inst/doc
+
+# BiocCheck output folder (regenerated each run)
+MRManalyzeR.BiocCheck/
+/doc/
+/Meta/
+
+# RStudio project file - kept local, not part of the package
+*.Rproj

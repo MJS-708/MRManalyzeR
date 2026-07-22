@@ -19,8 +19,32 @@ key when loading from xlsx. Default `"Sample_ID"`.}
 A `struct::DatasetExperiment`.
 }
 \description{
-Used by [`combine_datasets()`] so the combine pipeline can mix RDS and
+Used by [`combine_datasets()`] so the combine workflow can mix RDS and
 xlsx inputs (xlsx loading reconstructs a `DatasetExperiment` from the
 standard sheets `feature_metadata`, `sample_metadata`, `matrix` written
 by [`run_MRManalyzeR()`]).
 }
+\examples{
+de <- struct::DatasetExperiment(
+  data          = data.frame(A = c(1, 2), B = c(3, 4),
+                             row.names = c("S1", "S2")),
+  sample_meta   = data.frame(Sample_ID = c("S1", "S2"),
+                             row.names = c("S1", "S2")),
+  variable_meta = data.frame(Compound = c("A", "B"),
+                             row.names = c("A", "B")))
+f <- tempfile(fileext = ".RDS"); saveRDS(de, f)
+load_dataset(f)
+}
+\seealso{
+Other data parse:
+\code{\link[=assemble_dataset]{assemble_dataset()}},
+\code{\link[=combine_datasets]{combine_datasets()}},
+\code{\link[=load_config]{load_config()}},
+\code{\link[=read_peak_matrix]{read_peak_matrix()}},
+\code{\link[=read_skyline]{read_skyline()}},
+\code{\link[=read_targetlynx]{read_targetlynx()}},
+\code{\link[=validate_config]{validate_config()}},
+\code{\link[=validate_design]{validate_design()}},
+\code{\link[=validate_input]{validate_input()}}
+}
+\concept{data parse}

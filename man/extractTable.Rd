@@ -4,23 +4,28 @@
 \alias{extractTable}
 \title{Extract and reshape TargetLynx tables from a Waters-exported xlsx}
 \usage{
-extractTable(lcms_wb, tl_headers)
+extractTable(lcms_wb, tl_headers, data_tab_names = NULL)
 }
 \arguments{
 \item{lcms_wb}{Either a path to a TargetLynx xlsx file, or an `openxlsx`
 workbook object (e.g. from `openxlsx::loadWorkbook()`). A path is
-preferred — it avoids a C-level bug in `loadWorkbook()` that surfaces
+preferred - it avoids a C-level bug in `loadWorkbook()` that surfaces
 on workbooks with certain styling/drawing XML.}
 
 \item{tl_headers}{Character vector of TargetLynx column headers to keep
 (e.g. `c("ID", "Name", "Area", "ng/mL", "Response", "S/N")`).}
+
+\item{data_tab_names}{Explicit sheet name(s) to read (e.g. from
+`tl_data.data_tab_names` in the YAML). `NULL` (default) falls back to
+every sheet whose name contains `"lcms_data"`.}
 }
 \value{
 A data frame of stacked compound blocks with columns matching `tl_headers`.
 }
 \description{
-Reads every sheet matching `lcms_data*`, locates the compound blocks
+Reads the requested TargetLynx sheet(s), locates the compound blocks
 (rows starting with "Compound"), and returns a long data frame with one
 row per sample x compound. The `ID` column is overwritten with the
 extracted compound name.
 }
+\keyword{internal}

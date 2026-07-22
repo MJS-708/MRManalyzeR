@@ -40,12 +40,13 @@ A `batch_correct` `struct` model object.
 \description{
 Builds a `batch_correct` `struct` model that scales each batch so its
 per-feature median matches the grand median across all reference
-(typically QC) samples. Apply via [structToolbox::model_apply()].
+(typically QC) samples. Apply via [struct::model_apply()].
 }
 \examples{
 \dontrun{
   D = iris_DatasetExperiment()
   M = batch_correct(factor_name = 'Species', qc_label = 'all')
-  M = structToolbox::model_apply(M, D)
+  M = struct::model_apply(M, D)
 }
 }
+\keyword{internal}

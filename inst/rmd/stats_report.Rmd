@@ -29,10 +29,28 @@ if(!exists("report_pars") || is.null(report_pars))
 
 `%||%` = function(a, b) if(is.null(a)) b else a
 
+# Colour scheme (shared by every plot). Set once here rather than passed to
+# each plotting function, so a report is internally consistent by default.
+.cols = report_pars$colours %||% list()
+options(MRManalyzeR.palette   = .cols$qualitative %||% "hat",
+        MRManalyzeR.diverging = .cols$diverging   %||% "heatmap2")
+
+# -- Sample identification (shared across all sections) --
+# One column classifies every row; sample_labels names the value(s) marking
+# biological samples (vs blanks / QCs / calibration standards).
+# sample_id_head is the per-sample identifier used for hover tooltips and
+# heatmap row labels (and the default for pca.label_factor).
+sample_type_head = report_pars$sample_type_head %||% "Sample_type"
+sample_labels    = report_pars$sample_labels    %||% "Sample"
+sample_id_head   = report_pars$sample_id_head   %||% "Sample_ID"
+
 # Stats blocks
-comparisons   = report_pars$comparisons   %||% list()
-correlations  = report_pars$correlations  %||% list()
-linear_models = report_pars$linear_models %||% list()
+# Each section is a block with a section-level `enabled:` toggle and an
+# `entries:` list; .section_entries() honours the toggle and returns the
+# entries (or list() when disabled/absent).
+comparisons   = .section_entries(report_pars$comparisons,   "comparisons")
+correlations  = .section_entries(report_pars$correlations,  "correlations")
+linear_models = .section_entries(report_pars$linear_models, "linear_models")
 
 p_adjust      = report_pars$p_adjust      %||% "BH"
 sig_threshold = report_pars$sig_threshold %||% 0.05
@@ -40,9 +58,9 @@ sig_threshold = report_pars$sig_threshold %||% 0.05
 # Plot config
 fig_scale       = as.numeric(report_pars$fig_scale %||% 1)
 boxplot_faceted = isTRUE(report_pars$boxplot$faceted %||% TRUE)
-pca_include     = isTRUE(report_pars$pca$include   %||% TRUE)
+pca_include     = isTRUE(report_pars$pca$enabled   %||% TRUE)
 pca_label       = report_pars$pca$label            %||% "none"
-pca_label_factor = report_pars$pca$label_factor    %||% "Sample_ID"
+pca_label_factor = report_pars$pca$label_factor    %||% sample_id_head
 pca_ellipse     = report_pars$pca$ellipse          %||% "group"
 pca_ellipse_conf = as.numeric(report_pars$pca$ellipse_confidence %||% 0.95)
 
@@ -62,7 +80,7 @@ pca_pc_x          = as.integer(pca_components[1])
 pca_pc_y          = as.integer(pca_components[length(pca_components)])
 
 # Optional loadings plot below scores; coloured by a feature_metadata column.
-pca_loadings_show = isTRUE(report_pars$pca$loadings$include %||% TRUE)
+pca_loadings_show = isTRUE(report_pars$pca$loadings$enabled %||% TRUE)
 pca_loadings_color_by = report_pars$pca$loadings$color_by %||% NULL
 
 # Optional extra subset for the GLOBAL PCA tab (multi-key, AND'd together).
@@ -70,32 +88,99 @@ pca_loadings_color_by = report_pars$pca$loadings$color_by %||% NULL
 # to inspect only the left-lobe samples in the global PCA.
 pca_global_subset = report_pars$pca$subset %||% NULL
 
-volcano_include   = isTRUE(report_pars$volcano$include %||% TRUE)
+volcano_include   = isTRUE(report_pars$volcano$enabled %||% TRUE)
 volcano_top_n     = as.integer(report_pars$volcano$top_n_label %||% 10)
 # Volcano y-axis: use raw or BH-adjusted p (default = unadjusted, per request)
 volcano_use_adj   = isTRUE(report_pars$volcano$use_adjusted %||% FALSE)
 
-# Heatmap (z-score, samples x features)
-heatmap_include            = isTRUE(report_pars$heatmap$include %||% TRUE)
+# Heatmap (z-score, samples x features). Shared render settings live at the
+# heatmap: root and are INHERITED by the general / top_changing / split_by_class
+# sub-blocks; any can be OVERRIDDEN per block (resolved via .resolve_hm below).
+heatmap_include            = isTRUE(report_pars$heatmap$enabled %||% TRUE)
 heatmap_color_samples_by   = report_pars$heatmap$color_samples_by  %||%
-                             (report_pars$global_summary_factor %||% "Sample_type")
+                             report_pars$global_summary_factor %||% sample_type_head
 heatmap_group_features_by  = report_pars$heatmap$group_features_by %||% NULL
 heatmap_transform          = report_pars$heatmap$transform %||% "log2"
 heatmap_scale              = report_pars$heatmap$scale     %||% "z"
 heatmap_cluster_rows       = isTRUE(report_pars$heatmap$cluster_rows %||% FALSE)
 heatmap_cluster_within     = isTRUE(report_pars$heatmap$cluster_within_groups %||% TRUE)
-# Orientation: which axis carries samples. "samples_y" (default) = samples
-# on rows / y-axis, features on columns / x-axis. "samples_x" transposes.
-# "auto" puts the larger dimension on the y-axis (longer-dim labels are
-# easier to read when stacked vertically).
+# Orientation: which axis carries samples. "samples_y" (default) = samples on
+# rows / y-axis, features on columns / x-axis. "samples_x" transposes. "auto"
+# puts the larger dimension on the y-axis.
 heatmap_orientation        = tolower(report_pars$heatmap$orientation %||% "samples_y")
-if(!heatmap_orientation %in% c("samples_y", "samples_x", "auto"))
-  heatmap_orientation = "samples_y"
+# Feature-label density: show | small | hide. "small" shrinks the feature-axis
+# labels so a large panel stays readable via the class colour annotation bar;
+# "hide" drops them entirely.
+heatmap_feature_labels     = tolower(report_pars$heatmap$feature_labels %||% "small")
+# Cell edge in points. Absolute units keep cells square inside the canvas the
+# report stretches the heatmap grob into; proportional cells would not be.
+heatmap_cell_size = report_pars$heatmap$cell_size %||% "auto"
+# How far from square a cell may get when cell_size is "auto". 1 forces exact
+# squares; 1.5 lets a very lopsided panel use the canvas without the cells
+# looking stretched.
+heatmap_cell_aspect = as.numeric(report_pars$heatmap$cell_aspect %||% 1.5)
+
+# Root default for the 4.6 comparison-tab ranking metric (top_changing may override).
+heatmap_rank_by            = tolower(report_pars$heatmap$rank_by %||% "p_adj")
+
+# Validators: coerce out-of-range values back to the safe default.
+.chk_scope  = function(x) if(x %in% c("global","comparisons","all")) x else "all"
+.chk_orient = function(x) if(x %in% c("samples_y","samples_x","auto")) x else "samples_y"
+.chk_labels = function(x) if(x %in% c("show","small","hide")) x else "small"
+heatmap_orientation    = .chk_orient(heatmap_orientation)
+heatmap_feature_labels = .chk_labels(heatmap_feature_labels)
+
+# Resolve a sub-block's render settings against the root defaults — the full
+# settings list consumed by .draw_heatmap(). Every setting is overridable per
+# block (block$x %||% root_x).
+.resolve_hm = function(block){
+  block = block %||% list()
+  list(
+    color_samples_by  = block$color_samples_by  %||% heatmap_color_samples_by,
+    group_features_by = block$group_features_by %||% heatmap_group_features_by,
+    transform         = tolower(block$transform %||% heatmap_transform),
+    scale             = tolower(block$scale     %||% heatmap_scale),
+    cluster_rows      = isTRUE(block$cluster_rows          %||% heatmap_cluster_rows),
+    cluster_within    = isTRUE(block$cluster_within_groups %||% heatmap_cluster_within),
+    orientation       = .chk_orient(tolower(block$orientation    %||% heatmap_orientation)),
+    feature_labels    = .chk_labels(tolower(block$feature_labels %||% heatmap_feature_labels)),
+    cell_size         = block$cell_size %||% heatmap_cell_size,
+    cell_aspect       = as.numeric(block$cell_aspect %||% heatmap_cell_aspect)
+  )
+}
+
+# 4.5 general — all features retained.
+heatmap_general       = report_pars$heatmap$general %||% list()
+heatmap_general_on    = isTRUE(heatmap_general$enabled %||% TRUE)
+heatmap_general_scope = .chk_scope(tolower(heatmap_general$scope %||% "all"))
+heatmap_general_cfg   = .resolve_hm(heatmap_general)
+
+# 4.6 top-changing — top-N changing features per class. Comparison tabs rank by
+# `rank_by` (block %||% root); the Global tab ranks by separation across
+# color_samples_by (no single 2-group contrast exists globally).
+heatmap_topchg        = report_pars$heatmap$top_changing %||% list()
+heatmap_topchg_on     = isTRUE(heatmap_topchg$enabled %||% FALSE)
+heatmap_topchg_scope  = .chk_scope(tolower(heatmap_topchg$scope %||% "comparisons"))
+heatmap_topchg_n      = as.integer(heatmap_topchg$n_per_class %||% 10)
+heatmap_topchg_rank   = tolower(heatmap_topchg$rank_by %||% heatmap_rank_by)
+heatmap_topchg_cfg    = .resolve_hm(heatmap_topchg)
+
+# 4.7 by class — one heatmap per subclass_col value, or one COMBINED heatmap
+# across the selected values (multi_class). `subclass_values` focuses specific
+# values (empty/NULL = all).
+heatmap_split         = report_pars$heatmap$split_by_class %||% list()
+heatmap_split_on      = isTRUE(heatmap_split$enabled %||% FALSE)
+heatmap_split_scope   = .chk_scope(tolower(heatmap_split$scope %||% "global"))
+heatmap_subclass_col  = heatmap_split$subclass_col %||% NULL
+heatmap_subclass_vals = heatmap_split$subclass_values %||% NULL
+heatmap_split_multi   = tolower(heatmap_split$multi_class %||% "combined")
+if(!heatmap_split_multi %in% c("combined","tabs")) heatmap_split_multi = "combined"
+heatmap_split_cfg     = .resolve_hm(heatmap_split)
 
 # Biological-sample filter (drops blanks/QCs from global summary + global PCA).
-# Default: keep only Sample_type == "Sample". Set head: ~ to disable.
+# Defaults to sample_type_head ∈ sample_labels. Set biological_filter.head: ~ to disable.
 bio_filter        = report_pars$biological_filter %||%
-                    list(head = "Sample_type", levels = c("Sample"))
+                    list(head = sample_type_head, levels = sample_labels)
 bio_filter_head   = bio_filter$head
 bio_filter_levels = bio_filter$levels
 
@@ -105,8 +190,8 @@ boxplot_factors = report_pars$boxplot$factors %||%
                    c(report_pars$boxplot_factor1, report_pars$boxplot_factor2)
 boxplot_factors = boxplot_factors[!is.null(boxplot_factors) & nzchar(boxplot_factors)]
 boxplot_display = report_pars$boxplot$display %||% "tabs"      # combined | tabs
-boxplot_levels  = report_pars$boxplot$levels  %||% report_pars$boxplot_levels %||% c("Sample")
-boxplot_head    = report_pars$boxplot$head    %||% report_pars$boxplot_head   %||% "Sample_type"
+boxplot_levels  = report_pars$boxplot$levels %||% sample_labels
+boxplot_head    = report_pars$boxplot$head   %||% sample_type_head
 
 # Plot type — applies to BOTH section 4.2 (faceted across comparisons) and 4.3
 # (general by-factor). Values: "box" | "bar" | "both". When "both", boxplot
@@ -121,14 +206,20 @@ if(!plot_error_bar %in% c("SD", "SE", "NONE")) plot_error_bar = "SD"
 
 # Per-comparison boxplot toggle (faceted across comparisons)
 plot_boxplot_per_comparison = isTRUE(report_pars$plot_boxplot_per_compound %||% TRUE)
-yaxis_quant = report_pars$yaxis_quant %||% 0.95
+yaxis_quant    = report_pars$yaxis_quant    %||% 0.95
+yaxis_scalar = as.numeric(report_pars$yaxis_scalar %||% 1.3)
 
-# Sample-level summary bar plots
-global_summary_factor = report_pars$global_summary_factor %||%
-                        report_pars$global_boxpot_factor %||%
-                        "Sample_type"
+# Sample-level summary bar plots; default group/colour by the sample-type classifier.
+global_summary_factor = report_pars$global_summary_factor %||% sample_type_head
 
 units = pmp_params$units %||% pmp_params$datatype %||% project_paths$datatype %||% ""
+
+# Y-value label for point tooltips: the datatype units (ng/mL, Response, …),
+# or "value" when unset. Coerced to a scalar (datatype may arrive as a list).
+value_label = local({
+  u = as.character(units)[1]
+  if(!is.na(u) && nzchar(u)) u else "value"
+})
 
 # Ion ratios (enzyme activity surrogates etc.)
 ion_ratios_list    = ((report_pars$ion_ratios %||% list())$ratios) %||% list()
@@ -196,55 +287,30 @@ interactive_plots = isTRUE(report_pars$interactive_plots %||% TRUE) &&
   }
 }
 
-# Pre-built theme reused across per-compound loops
-boxplot_theme = ggplot2::theme_classic() +
-  ggplot2::theme(
-    axis.text.x     = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1),
-    legend.position = "none"
-  )
-
-# Add boxplot layers (used when plot_type is "box" or in the "both" loop).
-# Text tooltip is bound only on the jitter layer (where you actually want
-# per-point hover) — putting `text` on the parent ggplot makes ggplotly()
-# render one trace per data row across ALL layers, which produces the
-# horizontal-line-through-the-bar artefact in the "bar" layer.
-.add_box_layers = function(p){
-  p +
-    ggplot2::geom_boxplot(alpha = 0.3, outlier.shape = NA) +
-    ggplot2::geom_jitter(ggplot2::aes(text = .tooltip),
-                         width = 0.15, alpha = 0.7, size = 1.4)
+# Per-point hover for the box/jitter layers: sample id, y-value (labelled with
+# the datatype units) and the primary study factor. Kept here because the
+# report's tooltip wording is report-level presentation, not plot logic.
+.point_tooltip = function(sid, gsf_val, yval, ylab = value_label){
+  sprintf("%s: %s<br>%s: %.3g<br>%s: %s",
+          sample_id_head, sid, ylab, yval, global_summary_factor, gsf_val)
 }
 
-# Add barplot layers with SD/SE error bars (used when plot_type is "bar" or
-# in the "both" loop). `error_bar` ∈ {"SD","SE","NONE"}. Jitter intentionally
-# omitted on bars: the boxplot view next to it already shows individual
-# points, and ggplotly() renders per-point jitter as horizontal segments
-# under the bar (which is what the dense "lines through the bar" effect was).
-.add_bar_layers = function(p, error_bar){
-  err_fn = switch(error_bar,
-    SD   = function(x){ m = mean(x, na.rm = TRUE); s = stats::sd(x, na.rm = TRUE); c(y = m, ymin = m - s, ymax = m + s) },
-    SE   = function(x){ m = mean(x, na.rm = TRUE); n = sum(!is.na(x)); s = stats::sd(x, na.rm = TRUE) / sqrt(max(1, n)); c(y = m, ymin = m - s, ymax = m + s) },
-    NONE = NULL
-  )
-  # ggplotly's translation of geom-width parameters is not 1:1 between bar
-  # and errorbar — empirically the errorbar cap renders much wider than the
-  # nominal width. To get a cap that's clearly narrower than the bar fill
-  # (~1/5 the bar width visually), use a very small absolute width here.
-  p = p + ggplot2::stat_summary(geom = "bar", fun = "mean", alpha = 0.4,
-                                colour = "black", width = 0.7)
-  if(!is.null(err_fn))
-    p = p + ggplot2::stat_summary(geom = "errorbar", fun.data = err_fn,
-                                  width = 0.05, linewidth = 0.4)
-  p
-}
-
-# Render one or two plots based on plot_type. Returns a list with named
-# entries among "box" / "bar" — caller iterates and prints each.
-.compound_plots = function(p_base, plot_type, error_bar){
-  out = list()
-  if(plot_type %in% c("box", "both")) out$box = .add_box_layers(p_base)
-  if(plot_type %in% c("bar", "both")) out$bar = .add_bar_layers(p_base, error_bar)
-  out
+# plot_boxplot() draws one type at a time; the report shows one or both.
+# Every box/bar in the report takes the package qualitative palette, so a
+# group keeps the same colour whether it is drawn here, in a heatmap
+# annotation or on the PCA.
+.compound_plots = function(de_plot, compound, group_by, facet_by){
+  types = if(plot_type == "both") c("box", "bar") else plot_type
+  out = lapply(types, function(ty)
+    plot_boxplot(de_plot, compound, group_by, facet_by = facet_by,
+                 type           = ty,
+                 error_bar      = plot_error_bar,
+                 value_label    = units,
+                 sample_id_head = sample_id_head,
+                 tooltip_factor = global_summary_factor,
+                 yaxis_quant    = yaxis_quant,
+                 yaxis_scalar   = yaxis_scalar))
+  stats::setNames(out, types)
 }
 ```
 
@@ -259,7 +325,8 @@ heatmap) inspection per comparison.
 > ends with `_stats.xlsx`) saved alongside this HTML report. Open it in
 > Excel to filter / sort the full tables.** This report shows only the
 > visualisations and the volcano significant-feature shortlist; the
-> long-form tables are intentionally not duplicated here.
+> long-form tables are intentionally not duplicated here. The workbook's
+> first sheet, `key`, defines every column heading it contains.
 
 **Missing-value policy** (which sections impute and which don't):
 
@@ -284,9 +351,9 @@ compound_names = compoundInfo$Compound
 
 # Biological-sample subset: dropped from sections that should not see blanks/QCs
 # (global summary, global PCA). Per-comparison sections do their own subsetting
-# via de_subset(), so they're unaffected.
+# via subset_dataset(), so they're unaffected.
 if(!is.null(bio_filter_head) && bio_filter_head %in% colnames(metadata)){
-  bio_de = de_subset(importData,
+  bio_de = subset_dataset(importData,
                      conditions = setNames(list(bio_filter_levels),
                                            bio_filter_head))
   bio_meta   = bio_de$sample_meta
@@ -297,9 +364,18 @@ if(!is.null(bio_filter_head) && bio_filter_head %in% colnames(metadata)){
   bio_matrix = data_matrix
 }
 
+# Fail loud here rather than let downstream sections silently degrade:
+# smeta[[factor_name]] on a missing column returns NULL (no error), which
+# would just produce an uninformative single-group summary bar/heatmap
+# instead of surfacing the YAML typo.
+if(!global_summary_factor %in% colnames(metadata))
+  stop(sprintf(
+    "[stats_report] global_summary_factor='%s' is not a column in sample_metadata. Available columns: %s",
+    global_summary_factor, paste(colnames(metadata), collapse = ", ")))
+
 DT::datatable(
   metadata %>%
-    dplyr::group_by(.data[[report_pars$summary_head %||% "Sample_type"]]) %>%
+    dplyr::group_by(.data[[sample_type_head]]) %>%
     dplyr::summarize(`Number of samples` = dplyr::n(), .groups = "drop")
 )
 ```
@@ -341,7 +417,8 @@ with the number of features.
   ggplot2::ggplot(m, ggplot2::aes(value, feature, fill = .grp)) +
     ggplot2::geom_col(position = ggplot2::position_dodge(width = 0.8),
                       width = 0.7) +
-    ggplot2::scale_fill_brewer(palette = "Set1", na.value = "grey70") +
+    ggplot2::scale_fill_manual(values = .group_fill_colors(m$.grp),
+                               na.value = "grey70") +
     ggplot2::labs(x = xlab, y = "Compound", fill = factor_name) +
     ggplot2::theme_classic(base_size = 11) +
     ggplot2::theme(
@@ -399,20 +476,24 @@ across **all** comparisons × methods × features.
 ```{r comp-boxplots, results="asis", eval=plot_boxplot_per_comparison && length(comparisons) > 0, fig.width=10*fig_scale, fig.height=6*fig_scale}
 # Build one long data frame across all comparisons, then facet.
 # Combine user `subset:` with the comparison level restriction in one
-# de_subset() call (avoid post-hoc DE mutation which trips SE's assay check).
+# subset_dataset() call (avoid post-hoc DE mutation which trips SE's assay check).
 long_rows = list()
 for(comp in comparisons){
   cond = comp$subset
   cond = if(is.null(cond)) list() else as.list(cond)
   cond[[comp$compare$factor]] = comp$compare$levels
-  de_sub = de_subset(importData, conditions = cond)
+  de_sub = subset_dataset(importData, conditions = cond)
   if(nrow(de_sub$sample_meta) == 0) next
 
   d = de_sub$data
-  d$.sample_id  = rownames(d)
+  .sm = de_sub$sample_meta
+  d$.sample_id  = if(sample_id_head %in% colnames(.sm))
+                    as.character(.sm[[sample_id_head]]) else rownames(d)
   d$.group      = factor(de_sub$sample_meta[[comp$compare$factor]],
                          levels = comp$compare$levels)
   d$.comparison = comp$name
+  d$.gsf        = if(global_summary_factor %in% colnames(.sm))
+                    as.character(.sm[[global_summary_factor]]) else NA_character_
   long_rows[[length(long_rows) + 1]] = d
 }
 long = dplyr::bind_rows(long_rows)
@@ -459,21 +540,25 @@ function showBoxplot(id){
 </script>
 ')
 
+# One DatasetExperiment over the long frame: rows are sample x comparison
+# pseudo-injections, which is exactly what the faceted panels show.
+.long_meta = long[, c(".group", ".comparison"), drop = FALSE]
+# Name these as the real metadata columns so the tooltip labels read
+# "Sample_ID: ..." / "Treatment: ..." rather than the internal names.
+.long_meta[[sample_id_head]]        = long$.sample_id
+.long_meta[[global_summary_factor]] = long$.gsf
+
+.long_de = struct::DatasetExperiment(
+  data          = long[, detected_compounds, drop = FALSE],
+  sample_meta   = .long_meta,
+  variable_meta = data.frame(Compound = detected_compounds,
+                             row.names = detected_compounds))
+
 for(i in seq_along(detected_compounds)){
   compound = detected_compounds[i]
   cid      = detected_ids[i]
-  axis_limit = quantile(long[[compound]], prob = yaxis_quant, na.rm = TRUE) * 1.3
-
-  long$.tooltip = sprintf("Sample: %s<br>%s: %.3g",
-                          long$.sample_id, compound, long[[compound]])
-
-  p_base = ggplot2::ggplot(long, ggplot2::aes(x = .group, y = .data[[compound]],
-                                              fill = .group)) +
-            ggplot2::coord_cartesian(ylim = c(0, axis_limit)) +
-            ggplot2::labs(x = NULL, y = units, title = compound) +
-            ggplot2::facet_wrap(~ .comparison, scales = "free_x", nrow = 1) +
-            boxplot_theme
-  plots = .compound_plots(p_base, plot_type, plot_error_bar)
+  plots = .compound_plots(.long_de, compound, ".group",
+                          facet_by = ".comparison")
 
   # Show alphabetically-first detected compound by default (matches dropdown)
   display = if(detected_ids[i] == detected_ids_alpha[1]) "block" else "none"
@@ -501,6 +586,16 @@ for(i in seq_along(detected_compounds)){
 keep = metadata[[boxplot_head]] %in% boxplot_levels
 plot_meta = metadata[keep, , drop = FALSE]
 plot_data = data_matrix[keep, , drop = FALSE]
+
+# Primary study factor per row (for point tooltips), aligned to plot_data rows.
+gsf_fb = if(global_summary_factor %in% colnames(plot_meta))
+           as.character(plot_meta[[global_summary_factor]]) else NA_character_
+
+missing_bf = setdiff(boxplot_factors, colnames(plot_meta))
+if(length(missing_bf))
+  stop(sprintf(
+    "[stats_report] boxplot.factors contains column(s) not in sample_metadata: %s. Available columns: %s",
+    paste(missing_bf, collapse = ", "), paste(colnames(plot_meta), collapse = ", ")))
 
 # Detect compounds with any data
 is_detected_fb = vapply(compound_names, function(cmp){
@@ -565,26 +660,19 @@ function showFactorBoxplot_%s(id){
 </script>
 ', tab_safe, tab_safe, tab_safe))
 
+  .tab_meta = plot_meta
+  .tab_meta$.group = grouping
+  .tab_de = struct::DatasetExperiment(
+    data          = plot_data[, detected_fb, drop = FALSE],
+    sample_meta   = .tab_meta,
+    variable_meta = data.frame(Compound = detected_fb,
+                               row.names = detected_fb))
+
   for(i in seq_along(detected_fb)){
     compound = detected_fb[i]
     cid      = detected_ids_fb[i]
-    axis_limit = quantile(plot_data[[compound]], prob = yaxis_quant, na.rm = TRUE) * 1.3
-    df_plot = data.frame(group     = grouping,
-                         value     = plot_data[[compound]],
-                         sample_id = rownames(plot_data),
-                         .tooltip  = sprintf("Sample: %s<br>%s: %.3g",
-                                             rownames(plot_data),
-                                             compound,
-                                             plot_data[[compound]]),
-                         stringsAsFactors = FALSE)
-
-    p_base = ggplot2::ggplot(df_plot,
-                             ggplot2::aes(group, value, fill = group)) +
-              ggplot2::coord_cartesian(ylim = c(0, axis_limit)) +
-              ggplot2::scale_fill_brewer(palette = "Set1", na.value = "grey60") +
-              ggplot2::labs(x = NULL, y = units, title = compound) +
-              boxplot_theme
-    plots = .compound_plots(p_base, plot_type, plot_error_bar)
+    plots = .compound_plots(.tab_de, compound, ".group",
+                            facet_by = NULL)
 
     # Show alphabetically-first compound by default (matches dropdown)
     display = if(detected_ids_fb[i] == detected_ids_alpha_fb[1]) "block" else "none"
@@ -603,7 +691,7 @@ function showFactorBoxplot_%s(id){
 
 ## 4.3 PCA per comparison
 
-`r if(!pca_include) "_Skipped — set_ \x60pca.include: True\x60 _in YAML to enable._"`
+`r if(!pca_include) "_Skipped — set_ \x60pca.enabled: True\x60 _in YAML to enable._"`
 
 For each comparison: filter samples by the comparison's `subset:`, run PCA on
 that slice, colour points by the comparison's `compare.factor`. The first
@@ -673,8 +761,9 @@ tab is a **global** PCA across the biological subset, coloured by
           plot.margin       = ggplot2::margin(4, 6, 4, 6)
         )
   p = if(is_num) p + ggplot2::scale_color_viridis_c()
-      else       p + ggplot2::scale_color_brewer(palette = "Set1",
-                                                 na.value = "grey60")
+      else       p + ggplot2::scale_color_manual(
+                       values = .group_fill_colors(scores$group),
+                       na.value = "grey60")
   if(ellipse_mode == "group" && !is_num && length(unique(scores$group)) > 1)
     p = p + ggplot2::stat_ellipse(ggplot2::aes(group = group),
                                   type = "norm", level = ellipse_conf,
@@ -692,65 +781,11 @@ tab is a **global** PCA across the biological subset, coloured by
   p
 }
 
-# Build the loadings ggplot object. Does NOT print.
+# Loadings are drawn by plot_loadings(); this wrapper only carries the
+# report's component selection and colour column.
 .pca_loadings_plot = function(res_pca, vmeta, pc_x, pc_y, loadings_color_by){
-  pr = res_pca$pr
-  if(is.null(pr)) return(NULL)
-  pc_max = ncol(pr$x)
-  if(pc_x > pc_max || pc_y > pc_max){
-    pc_x = 1; pc_y = min(2, pc_max)
-  }
-  pcx_lab = sprintf("PC%d", pc_x); pcy_lab = sprintf("PC%d", pc_y)
-  feats = rownames(pr$rotation)
-
-  has_color = !is.null(loadings_color_by) && loadings_color_by %in% colnames(vmeta)
-  color_vec = if(has_color){
-    cv = as.character(vmeta[[loadings_color_by]][match(feats, vmeta$Compound)])
-    cv[is.na(cv)] = "NA"; cv
-  } else {
-    rep("(all)", length(feats))
-  }
-  groups_in_order = unique(color_vec)
-
-  build_pc_df = function(loading_vec, pc_lab){
-    ord_feats = character(0)
-    for(g in groups_in_order){
-      idx_g = which(color_vec == g)
-      if(!length(idx_g)) next
-      sorted = idx_g[order(loading_vec[idx_g], decreasing = TRUE)]
-      ord_feats = c(ord_feats, feats[sorted])
-    }
-    df = data.frame(
-      feature = feats,
-      feat_pc = paste0(feats, "__", pc_lab),
-      loading = loading_vec,
-      .color  = factor(color_vec, levels = groups_in_order),
-      PC      = pc_lab,
-      stringsAsFactors = FALSE
-    )
-    list(df = df, order_levels = rev(paste0(ord_feats, "__", pc_lab)))
-  }
-  ld_x = build_pc_df(pr$rotation[, pc_x], pcx_lab)
-  ld_y = build_pc_df(pr$rotation[, pc_y], pcy_lab)
-  ld_long = rbind(ld_x$df, ld_y$df)
-  combined_levels = c(ld_x$order_levels, ld_y$order_levels)
-  ld_long$feat_pc = factor(ld_long$feat_pc, levels = combined_levels)
-  ld_long$PC      = factor(ld_long$PC, levels = c(pcx_lab, pcy_lab))
-
-  ggplot2::ggplot(ld_long,
-                  ggplot2::aes(loading, feat_pc, fill = .color)) +
-        ggplot2::geom_col() +
-        ggplot2::geom_vline(xintercept = 0, color = "grey50", linewidth = 0.3) +
-        ggplot2::facet_wrap(~ PC, scales = "free", nrow = 1) +
-        ggplot2::scale_y_discrete(labels = function(x) sub("__[^_]+$", "", x)) +
-        ggplot2::scale_fill_viridis_d(end = 0.9, na.value = "grey60", drop = FALSE) +
-        ggplot2::labs(x = "Loading", y = NULL,
-                      fill = loadings_color_by %||% "") +
-        ggplot2::theme_classic(base_size = 10) +
-        ggplot2::theme(axis.text.y     = ggplot2::element_text(size = 6),
-                       strip.text      = ggplot2::element_text(face = "bold"),
-                       legend.position = "bottom") +
-        ggplot2::guides(fill = ggplot2::guide_legend(nrow = 3, byrow = TRUE))
+  plot_loadings(res_pca, vmeta, components = c(pc_x, pc_y),
+                colour_by = loadings_color_by)
 }
 
 # Print preprocessing trace + the matrix-size note (used in scores tab).
@@ -786,7 +821,7 @@ tab is a **global** PCA across the biological subset, coloured by
   rownames(M) = rn
   rownames(sm) = rn
 
-  res = run_pca_pipeline(M,
+  res = run_pca(M,
                          impute        = pca_impute,
                          impute_frac   = pca_impute_frac,
                          transform     = pca_transform,
@@ -802,7 +837,7 @@ tab is a **global** PCA across the biological subset, coloured by
 
 # Global tab
 pca_global_de = if(length(pca_global_subset)){
-  de_subset(bio_de, conditions = as.list(pca_global_subset))
+  subset_dataset(bio_de, conditions = as.list(pca_global_subset))
 } else {
   bio_de
 }
@@ -828,7 +863,7 @@ for(comp in comparisons){
   cond = comp$subset
   cond = if(is.null(cond)) list() else as.list(cond)
   cond[[comp$compare$factor]] = comp$compare$levels
-  de_sub = de_subset(importData, conditions = cond)
+  de_sub = subset_dataset(importData, conditions = cond)
 
   if(nrow(de_sub$data) < 3 || ncol(de_sub$data) < 2){
     .pca_runs[[comp$name]] = list(tab_heading = comp$name, insufficient = TRUE)
@@ -896,7 +931,7 @@ for(nm in names(.pca_runs)){
 
 ## 4.4 Volcano per comparison {.tabset .tabset-fade}
 
-`r if(!volcano_include) "_Skipped — set_ \x60volcano.include: True\x60 _in YAML to enable._"`
+`r if(!volcano_include) "_Skipped — set_ \x60volcano.enabled: True\x60 _in YAML to enable._"`
 
 **Methods.** One volcano per 2-group comparison directly from the t-test
 rows. For ≥3-group comparisons we plot one volcano per Tukey HSD pair.
@@ -907,85 +942,44 @@ Significance threshold dashed line at p `r if(volcano_use_adj) "(BH-adjusted)" e
 
 ```{r comp-volcano, results="asis", eval=volcano_include && !is.null(stats_tables) && nrow(stats_tables$stats) > 0, fig.width=5.5*fig_scale, fig.height=5*fig_scale, out.width="600px"}
 # Volcano sources:
-#   2-group comparisons -> use the t_test rows directly (have log2FC + p_adj)
-#   3+-group comparisons -> use the tukey post-hoc rows (one volcano per pair)
+#   2-group comparisons -> the single test row (welch / student / wilcoxon)
+#   3+-group comparisons -> the post-hoc rows (one volcano per pair)
+# Global tests (anova / kruskal) have no fold change and are excluded.
 .volc_p_col = if(volcano_use_adj) "p_adj" else "p_value"
 .volc_p_lbl = if(volcano_use_adj) sprintf("BH-adjusted p (%s)", p_adjust) else "raw p"
 
 volc_data = stats_tables$stats %>%
-  dplyr::filter(method %in% c("t_test", "tukey"),
-                !is.na(log2FC), !is.na(.data[[.volc_p_col]]))
+  dplyr::filter(!is.na(log2FC), !is.na(.data[[.volc_p_col]]))
 
 if(nrow(volc_data) == 0){
   cat("_No volcano-eligible rows._\n")
 } else {
   for(comp_name in unique(volc_data$comparison)){
     sub = volc_data %>% dplyr::filter(comparison == comp_name)
-    pair_groups = if("tukey" %in% sub$method)
-      unique(sub %>% dplyr::filter(method == "tukey") %>%
+    .posthoc = c("tukey", "pairwise_wilcoxon")
+    pair_groups = if(any(sub$method %in% .posthoc))
+      unique(sub %>% dplyr::filter(method %in% .posthoc) %>%
                dplyr::transmute(pair = paste(group1, "vs", group2)) %>%
                dplyr::pull(pair))
     else NA
 
     for(pair_lbl in (if(is.na(pair_groups[1])) NA else pair_groups)){
       this = if(is.na(pair_lbl)) sub else
-        sub %>% dplyr::filter(method == "tukey",
+        sub %>% dplyr::filter(method %in% .posthoc,
                               paste(group1, "vs", group2) == pair_lbl)
 
       cat(sprintf("\n### %s%s {-}\n\n", comp_name,
                   if(is.na(pair_lbl)) "" else paste0(" — ", pair_lbl)))
 
-      this$neglog10p = -log10(this[[.volc_p_col]])
-      this$sig = ifelse(this[[.volc_p_col]] < sig_threshold, "sig", "ns")
-      this$tooltip = sprintf("%s<br>log2FC: %.3g<br>%s: %.3g",
-                             this$feature, this$log2FC,
-                             .volc_p_lbl, this[[.volc_p_col]])
+      p = plot_volcano(this, comparison = comp_name,
+                       pair          = if(is.na(pair_lbl)) NULL else pair_lbl,
+                       use_adjusted  = volcano_use_adj,
+                       sig_threshold = sig_threshold,
+                       top_n_label   = volcano_top_n)
 
-      # Always label all significant features; if more than top_n_label sig
-      # features exist, label only the top_n_label most significant.
-      sig_rows = this %>% dplyr::filter(sig == "sig") %>%
+      sig_rows = this %>% dplyr::filter(.data[[.volc_p_col]] < sig_threshold) %>%
                           dplyr::arrange(.data[[.volc_p_col]])
-      to_label = if(nrow(sig_rows) <= volcano_top_n) sig_rows
-                 else utils::head(sig_rows, volcano_top_n)
 
-      p = ggplot2::ggplot(this, ggplot2::aes(log2FC, neglog10p, color = sig, text = tooltip)) +
-            ggplot2::geom_point(alpha = 0.7, size = 2) +
-            ggplot2::scale_color_manual(values = c(sig = "#d62728", ns = "grey60")) +
-            ggplot2::geom_hline(yintercept = -log10(sig_threshold),
-                                linetype = "dashed", color = "grey40") +
-            ggplot2::geom_vline(xintercept = 0, linetype = "dashed", color = "grey40") +
-            ggplot2::labs(x = "log2 fold-change",
-                          y = sprintf("-log10(%s)", .volc_p_lbl),
-                          color = NULL,
-                          title = sprintf("%s%s",
-                                          comp_name,
-                                          if(is.na(pair_lbl)) "" else paste0(" — ", pair_lbl))) +
-            ggplot2::theme_classic(base_size = 13) +
-            ggplot2::theme(legend.position = "none")
-
-      if(nrow(to_label) > 0){
-        # ggrepel is now an Imports dep so it's always available; but keep
-        # a geom_text fallback in case of unusual install paths.
-        if(requireNamespace("ggrepel", quietly = TRUE)){
-          p = p + ggrepel::geom_text_repel(data = to_label,
-                                           ggplot2::aes(label = feature),
-                                           color = "#d62728",
-                                           fontface = "bold",
-                                           size = 3.2,
-                                           max.overlaps = Inf,
-                                           force = 4,
-                                           min.segment.length = 0,
-                                           segment.color = "#d62728",
-                                           segment.size = 0.3,
-                                           show.legend = FALSE)
-        } else {
-          p = p + ggplot2::geom_text(data = to_label,
-                                     ggplot2::aes(label = feature),
-                                     color = "#d62728", fontface = "bold",
-                                     size = 3.2, vjust = -0.7,
-                                     show.legend = FALSE)
-        }
-      }
       .show_plot(p, max_width = "650px")
       cat("\n\n")
 
@@ -1012,199 +1006,380 @@ if(nrow(volc_data) == 0){
 }
 ```
 
-## 4.5 Heatmap (samples × features) {.tabset .tabset-fade}
+## 4.5 Heatmap — general (all features) {.tabset .tabset-fade}
 
-`r if(!heatmap_include) "_Skipped — set_ \x60heatmap.include: True\x60 _in YAML to enable._"`
+`r if(!heatmap_include) "_Skipped — set_ \x60heatmap.enabled: True\x60 _in YAML to enable._"`
 
-`r if(heatmap_include) sprintf("Sample × feature heatmap. Cells coloured by per-feature %s of %s data. Sample rows annotated by_ \x60%s\x60_; feature columns%s.", heatmap_scale, heatmap_transform, heatmap_color_samples_by, if(!is.null(heatmap_group_features_by)) sprintf(" annotated and grouped by_ \x60%s\x60", heatmap_group_features_by) else "")`
+`r if(heatmap_include && !heatmap_general_on) "_Skipped — set_ \x60heatmap.general.enabled: True\x60 _in YAML to enable._"`
+
+`r if(heatmap_include && heatmap_general_on) sprintf("All features retained. Cells show per-feature %s of %s; samples coloured by \x60%s\x60%s. Scope: **%s** (Global and/or one tab per comparison). Feature labels: %s.", heatmap_general_cfg$scale, heatmap_general_cfg$transform, heatmap_general_cfg$color_samples_by, if(!is.null(heatmap_general_cfg$group_features_by)) sprintf(", features grouped by \x60%s\x60", heatmap_general_cfg$group_features_by) else "", heatmap_general_scope, heatmap_general_cfg$feature_labels)`
 
 ```{r heatmap, eval=heatmap_include, fig.width=max(10, ncol(bio_matrix)*0.18)*fig_scale, fig.height=max(5, nrow(bio_matrix)*0.22 + 2)*fig_scale}
-# Shared heatmap renderer — called for Global tab and each comparison tab.
-# M_raw  : samples × features numeric matrix (raw / pre-transform)
-# smeta  : sample metadata data.frame, rows aligned to M_raw
-# vmeta  : variable metadata data.frame with a 'Compound' column
-# title  : plot title string
-.draw_heatmap = function(M_raw, smeta, vmeta, title){
-  if(!requireNamespace("pheatmap", quietly = TRUE)){
-    cat("_Install `pheatmap` to render heatmaps._\n"); return(invisible(NULL))
+# Shared heatmap renderer — called for every scope target across 4.5/4.6/4.7.
+# M_raw   : samples × features numeric matrix (raw / pre-transform)
+# smeta   : sample metadata data.frame, rows aligned to M_raw
+# vmeta   : variable metadata data.frame with a 'Compound' column
+# title   : plot title string
+# cfg     : resolved render settings for the calling section (from .resolve_hm)
+#           — transform / scale / color_samples_by / cluster_rows /
+#           cluster_within / orientation / group_features_by / feature_labels.
+# group_by / feature_labels: explicit overrides (default to the cfg values);
+#           the combined split-by-class heatmap overrides group_by to the
+#           subclass column.
+# Thin wrapper over plot_heatmap(): the scope/target machinery below hands us
+# a matrix plus its metadata, so rewrap them as a DatasetExperiment, map the
+# resolved cfg onto the function's arguments, and print.
+.draw_heatmap = function(M_raw, smeta, vmeta, title, cfg = heatmap_general_cfg,
+                         group_by = cfg$group_features_by,
+                         feature_labels = cfg$feature_labels,
+                         canvas = NULL){
+  # 4.6 / 4.7 hand us a feature SUBSET but the full variable_meta, so align
+  # them: a DatasetExperiment requires variable_meta rows to match the data
+  # columns exactly, one row per feature, in order.
+  Mdf = as.data.frame(M_raw)
+  vm  = as.data.frame(vmeta)
+  sm  = as.data.frame(smeta)
+
+  idx = match(colnames(Mdf), vm$Compound)
+  Mdf = Mdf[, !is.na(idx), drop = FALSE]
+  vm  = vm[idx[!is.na(idx)], , drop = FALSE]
+  if(ncol(Mdf) == 0){
+    cat("_No features with metadata to draw._
+"); return(invisible(NULL))
   }
-  if(nrow(M_raw) < 3 || ncol(M_raw) < 2){
-    cat("_Insufficient data for heatmap._\n"); return(invisible(NULL))
-  }
+  rownames(vm) = vm$Compound
+  rownames(sm) = rownames(Mdf)
 
-  M = as.matrix(M_raw)
-  if("Sample_ID" %in% colnames(smeta))
-    rownames(M) = as.character(smeta$Sample_ID)
+  # Size the cells to this target's own dimensions against the shared canvas.
+  flip = identical(cfg$orientation, "samples_x") ||
+         (identical(cfg$orientation, "auto") && nrow(Mdf) > ncol(Mdf))
+  n_x  = if(flip) nrow(Mdf) else ncol(Mdf)
+  n_y  = if(flip) ncol(Mdf) else nrow(Mdf)
+  cell = if(is.null(canvas)) cfg$cell_size
+         else .hm_cell_for(n_x, n_y, canvas$w, canvas$h, cfg)
 
-  if(heatmap_transform == "log2"){
-    M[M < 0 & !is.na(M)] = 0; M = log2(M + 1)
-  } else if(heatmap_transform == "sqrt"){
-    M[M < 0 & !is.na(M)] = 0; M = sqrt(M)
-  }
-
-  vars   = apply(M, 2, stats::var, na.rm = TRUE)
-  keep_f = is.finite(vars) & vars > 0
-  M = M[, keep_f, drop = FALSE]
-  if(ncol(M) == 0){ cat("_No variable features._\n"); return(invisible(NULL)) }
-
-  if(heatmap_scale == "z")
-    M = scale(M, center = TRUE, scale = TRUE)
-  M[is.na(M)] = 0
-  cap = 2.5; M[M > cap] = cap; M[M < -cap] = -cap
-
-  ann_row = data.frame(row.names = rownames(M))
-  ann_row[[heatmap_color_samples_by]] = smeta[[heatmap_color_samples_by]]
-
-  ann_col  = NULL; gaps_col = NULL
-  if(!is.null(heatmap_group_features_by) &&
-     heatmap_group_features_by %in% colnames(vmeta)){
-    feats       = colnames(M)
-    fgroups     = as.character(vmeta[[heatmap_group_features_by]][match(feats, vmeta$Compound)])
-    fgroups[is.na(fgroups)] = "NA"
-    group_levels = unique(fgroups)
-    ordered_cols = character(0)
-    for(g in group_levels){
-      in_g = feats[fgroups == g]
-      if(heatmap_cluster_within && length(in_g) > 1){
-        d = stats::dist(t(M[, in_g, drop = FALSE]))
-        if(all(is.finite(d)))
-          in_g = in_g[stats::hclust(d, method = "average")$order]
-      }
-      ordered_cols = c(ordered_cols, in_g)
-    }
-    M = M[, ordered_cols, drop = FALSE]
-    fgroups2 = as.character(vmeta[[heatmap_group_features_by]][match(ordered_cols, vmeta$Compound)])
-    fgroups2[is.na(fgroups2)] = "NA"
-    ann_col = data.frame(row.names = ordered_cols)
-    ann_col[[heatmap_group_features_by]] = factor(fgroups2, levels = group_levels)
-    blk = rle(fgroups2)$lengths
-    gaps_col = cumsum(blk); gaps_col = gaps_col[-length(gaps_col)]
+  de_hm = tryCatch(
+    struct::DatasetExperiment(data = Mdf, sample_meta = sm,
+                              variable_meta = vm),
+    error = function(e) NULL)
+  if(is.null(de_hm)){
+    cat("_Could not assemble heatmap dataset._
+"); return(invisible(NULL))
   }
 
-  ord_s   = order(as.character(ann_row[[heatmap_color_samples_by]]))
-  M       = M[ord_s, , drop = FALSE]
-  ann_row = ann_row[ord_s, , drop = FALSE]
-  blk_r   = rle(as.character(ann_row[[heatmap_color_samples_by]]))$lengths
-  gaps_row = cumsum(blk_r); gaps_row = gaps_row[-length(gaps_row)]
+  p = plot_heatmap(
+    de_hm,
+    title                 = title,
+    color_samples_by      = cfg$color_samples_by,
+    group_features_by     = group_by,
+    transform             = cfg$transform,
+    scale                 = cfg$scale,
+    cluster_rows          = cfg$cluster_rows,
+    cluster_within_groups = cfg$cluster_within,
+    orientation           = cfg$orientation,
+    feature_labels        = feature_labels,
+    sample_id_head        = sample_id_head,
+    cell_size             = cell)
 
-  pal = grDevices::colorRampPalette(c("#2166ac", "white", "#b2182b"))(101)
-  brk = seq(-cap, cap, length.out = 102)
-
-  .qual = function(n){
-    if(requireNamespace("RColorBrewer", quietly = TRUE) && n <= 9 && n >= 3)
-      return(RColorBrewer::brewer.pal(n, "Set1"))
-    if(requireNamespace("RColorBrewer", quietly = TRUE) && n > 9)
-      return(grDevices::colorRampPalette(RColorBrewer::brewer.pal(9, "Set1"))(n))
-    grDevices::hcl.colors(max(n, 2), palette = "Dark 3")
+  if(is.null(p)){
+    cat("_Insufficient data for heatmap._
+"); return(invisible(NULL))
   }
-  .ann_colors = function(ann){
-    if(is.null(ann)) return(NULL)
-    out = lapply(ann, function(v){
-      lv = unique(as.character(v[!is.na(v)]))
-      if(length(lv) == 2) setNames(c("#377eb8", "#e41a1c"), lv)
-      else                setNames(.qual(length(lv)), lv)
-    })
-    names(out) = colnames(ann); out
-  }
-  ann_colors = c(.ann_colors(ann_row), .ann_colors(ann_col))
-
-  # Orientation: by default samples on y-axis (rows). "samples_x" transposes
-  # explicitly. "auto" transposes when there are more samples than features —
-  # the long axis goes to x so the canvas isn't tall and narrow with crowded
-  # row labels.
-  flip = identical(heatmap_orientation, "samples_x") ||
-         (identical(heatmap_orientation, "auto") &&
-          nrow(M) > ncol(M))
-  if(flip){
-    M_use         = t(M)
-    ann_row_use   = ann_col
-    ann_col_use   = ann_row
-    gaps_row_use  = gaps_col
-    gaps_col_use  = gaps_row
-    cluster_rows_use = FALSE
-    cluster_cols_use = heatmap_cluster_rows  # original "rows" was samples
-  } else {
-    M_use         = M
-    ann_row_use   = ann_row
-    ann_col_use   = ann_col
-    gaps_row_use  = gaps_row
-    gaps_col_use  = gaps_col
-    cluster_rows_use = heatmap_cluster_rows
-    cluster_cols_use = FALSE
-  }
-
-  ph = pheatmap::pheatmap(
-    M_use,
-    cluster_rows      = cluster_rows_use,
-    cluster_cols      = cluster_cols_use,
-    gaps_row          = if(length(gaps_row_use)) gaps_row_use else NULL,
-    gaps_col          = if(length(gaps_col_use)) gaps_col_use else NULL,
-    annotation_row    = ann_row_use,
-    annotation_col    = ann_col_use,
-    annotation_colors = if(length(ann_colors)) ann_colors else NA,
-    color             = pal, breaks = brk,
-    fontsize_row      = 11, fontsize_col = 9,
-    border_color      = NA,
-    legend_breaks     = c(-cap, -1, 0, 1, cap),
-    legend_labels     = c(sprintf("≤ -%g", cap), "-1", "0", "1", sprintf("≥ %g", cap)),
-    main              = title,
-    silent            = TRUE        # suppress auto-draw; we draw explicitly below
-  )
-  # Drawing approach: wrap the pheatmap gtable in a ggplot via annotation_custom().
-  # This fills the full knitr canvas (respects fig.width/fig.height) and is
-  # captured correctly in both regular chunks and results="asis" loops.
-  # Pitfalls avoided:
-  #   - print(ph$gtable)  → print.gtable emits text description, not a plot
-  #   - grid.draw()        → not captured in results="asis" chunks by knitr
-  #   - cowplot::plot_grid → places gtable at natural size, leaving whitespace
-  p_out = ggplot2::ggplot() +
-    ggplot2::annotation_custom(ph$gtable,
-                               xmin = -Inf, xmax = Inf,
-                               ymin = -Inf, ymax = Inf) +
-    ggplot2::theme_void()
-  print(p_out)
+  print(p)
   invisible(NULL)
+}
+
+# Build the render targets for a scope selector, shared by 4.5/4.6/4.7. Each
+# target is list(label, M = samples x features matrix, smeta, vmeta, comp) —
+# comp is NULL for the Global target, else the comparison spec. "comparisons"
+# and "all" expand the pre-defined comparisons; empty subsets are dropped.
+.heatmap_targets = function(scope){
+  g = list(list(label = "Global", M = bio_matrix, smeta = bio_meta,
+                vmeta = bio_de$variable_meta, comp = NULL))
+  cmps = list()
+  if(scope %in% c("comparisons", "all"))
+    cmps = Filter(Negate(is.null), lapply(comparisons, function(comp){
+      cond = if(is.null(comp$subset)) list() else as.list(comp$subset)
+      cond[[comp$compare$factor]] = comp$compare$levels
+      de = subset_dataset(importData, conditions = cond)
+      if(nrow(de$sample_meta) == 0) return(NULL)
+      list(label = comp$name, M = de$data, smeta = de$sample_meta,
+           vmeta = de$variable_meta, comp = comp)
+    }))
+  switch(scope, global = g, comparisons = cmps, all = c(g, cmps))
+}
+
+# Option 1: keep only the N most-changing features per class for a comparison.
+# Ranks each feature by the chosen stats metric (p_adj / p_value: smaller is
+# better; log2fc: larger |value| is better), takes the top N within each
+# `group_features_by` class. Falls back to all features if top_changing is off
+# or the comparison has no stats.
+.top_changing = function(comp_name, feats, vmeta, group_by = heatmap_group_features_by){
+  if(!heatmap_topchg_on || is.null(stats_tables) ||
+     is.null(stats_tables$stats) || nrow(stats_tables$stats) == 0) return(feats)
+  s = stats_tables$stats[stats_tables$stats$comparison == comp_name, , drop = FALSE]
+  metric_col = switch(heatmap_topchg_rank,
+                      log2fc = "log2FC", p_value = "p_value", "p_adj")
+  if(nrow(s) == 0 || !metric_col %in% colnames(s)) return(feats)
+
+  use_abs = metric_col == "log2FC"          # log2FC ranks by magnitude
+  agg = tapply(s[[metric_col]], s$feature, function(v){
+    v = v[is.finite(v)]
+    if(!length(v)) return(NA_real_)
+    if(use_abs) max(abs(v)) else min(v)     # best (biggest FC / smallest p)
+  })
+  score = agg[match(feats, names(agg))]     # aligned to feats; NA if no stats
+  grp = if(!is.null(group_by) && group_by %in% colnames(vmeta))
+          as.character(vmeta[[group_by]][match(feats, vmeta$Compound)]) else rep("all", length(feats))
+  grp[is.na(grp)] = "NA"
+
+  keep = unlist(lapply(unique(grp), function(g){
+    idx = which(grp == g)                   # positions in feats for this class
+    ord = order(score[idx], decreasing = use_abs, na.last = NA)  # drops NA-score feats
+    feats[idx][ord][seq_len(min(heatmap_topchg_n, length(ord)))]
+  }), use.names = FALSE)
+  if(length(keep)) keep else feats
+}
+
+# Global-tab analogue of .top_changing when there is no single comparison to
+# rank by: score each feature by how strongly it separates the `color_by` groups
+# (the section's color_samples_by / primary study factor). On the transformed
+# values, z-score each feature across samples, then score = variance of the
+# per-group means; keep the top-N per `group_by` class. Falls back to all feats
+# if the factor is absent or has < 2 usable groups.
+.top_changing_global = function(feats, M, smeta, vmeta, color_by, group_by, transform){
+  if(!heatmap_topchg_on) return(feats)
+  if(is.null(color_by) || !color_by %in% colnames(smeta)) return(feats)
+  g_all = as.character(smeta[[color_by]]); ok = !is.na(g_all)
+  if(length(unique(g_all[ok])) < 2) return(feats)
+
+  X = as.matrix(M[, feats, drop = FALSE])
+  if(identical(transform, "log2")){ X[X < 0 & !is.na(X)] = 0; X = log2(X + 1) }
+  else if(identical(transform, "sqrt")){ X[X < 0 & !is.na(X)] = 0; X = sqrt(X) }
+  X = scale(X)[ok, , drop = FALSE]; g = g_all[ok]     # per-feature z, keep labelled rows
+  score = apply(X, 2, function(col){
+    m = tapply(col, g, mean, na.rm = TRUE)            # per-group means
+    stats::var(as.numeric(m), na.rm = TRUE)           # spread across groups
+  })
+  names(score) = feats
+
+  cls = if(!is.null(group_by) && group_by %in% colnames(vmeta))
+          as.character(vmeta[[group_by]][match(feats, vmeta$Compound)]) else rep("all", length(feats))
+  cls[is.na(cls)] = "NA"
+  keep = unlist(lapply(unique(cls), function(cc){
+    idx = which(cls == cc)
+    ord = order(score[idx], decreasing = TRUE, na.last = NA)
+    feats[idx][ord][seq_len(min(heatmap_topchg_n, length(ord)))]
+  }), use.names = FALSE)
+  if(length(keep)) keep else feats
+}
+
+# Figure-canvas sizing shared by 4.5/4.6/4.7. Each asis section renders many
+# heatmaps into ONE knitr canvas (single fig size per chunk), so size to the
+# largest target using that block's orientation. .hm_scope_nrow = max sample
+# count across a scope's targets (used for the height/width formula).
+.hm_fig_dims = function(max_nrow, n_feat, orientation, fig_scale = 1,
+                        cell_size = heatmap_cell_size,
+                        max_w = 18, max_h = 22,
+                        min_cell = 2, max_cell = 18,
+                        max_aspect = heatmap_cell_aspect){
+  flip = orientation == "samples_x" || (orientation == "auto" && max_nrow > n_feat)
+  n_x = if(flip) max_nrow else n_feat     # cells along the x axis
+  n_y = if(flip) n_feat   else max_nrow   # cells along the y axis
+
+  # Fixed allowance (inches) for axis labels, the annotation bars and legend.
+  pad_w = 4.5; pad_h = 2.5
+
+  # "auto" (the default) picks the largest square cell that keeps the canvas
+  # inside max_w x max_h, so a 20-feature panel gets generous cells and a
+  # 300-feature panel shrinks instead of demanding a 46-inch figure. A numeric
+  # cell_size in YAML pins it and the canvas grows to fit.
+  cell = if(is.numeric(cell_size) && length(cell_size) &&
+            all(is.finite(cell_size))){
+    rep(cell_size, length.out = 2)
+  } else {
+    # Fill each axis independently, then pull the two back towards each other
+    # so a cell is never more than max_aspect from square. Forcing exact
+    # squares on a 600-feature x 30-sample panel would waste most of the
+    # canvas; 1.5:1 keeps the cells readable while using the space.
+    cw = max(min_cell, min(max_cell, (max_w - pad_w) * 72 / max(n_x, 1)))
+    ch = max(min_cell, min(max_cell, (max_h - pad_h) * 72 / max(n_y, 1)))
+    if(cw / ch > max_aspect) cw = ch * max_aspect
+    if(ch / cw > max_aspect) ch = cw * max_aspect
+    c(cw, ch)
+  }
+
+  # Cells are absolute units, so the canvas is sized to hold them (72 pt/inch).
+  w = n_x * cell[1] / 72 + pad_w
+  h = n_y * cell[2] / 72 + pad_h
+  list(w = max(10, w) * fig_scale, h = max(6, h) * fig_scale, cell = cell)
+}
+# Cell size for ONE target drawn into an already-fixed canvas. Every tab in a
+# section shares one knitr canvas (one fig.width/height per chunk), so a small
+# target must use BIGGER cells to fill it - otherwise it floats in whitespace
+# while the largest target sets the size.
+.hm_cell_for = function(n_x, n_y, w, h, cfg,
+                        min_cell = 2, max_cell = 40,
+                        pad_w = 4.5, pad_h = 2.5){
+  if(is.numeric(cfg$cell_size) && length(cfg$cell_size) &&
+     all(is.finite(cfg$cell_size)))
+    return(rep(cfg$cell_size, length.out = 2))   # pinned in YAML
+
+  asp = cfg$cell_aspect %||% 1.5
+  cw  = max(min_cell, min(max_cell, (w - pad_w) * 72 / max(n_x, 1)))
+  ch  = max(min_cell, min(max_cell, (h - pad_h) * 72 / max(n_y, 1)))
+  if(cw / ch > asp) cw = ch * asp
+  if(ch / cw > asp) ch = cw * asp
+  c(cw, ch)
+}
+
+.hm_scope_nrow = function(scope){
+  n = vapply(.heatmap_targets(scope), function(tg) nrow(tg$M), integer(1))
+  if(length(n)) max(n) else nrow(bio_matrix)
 }
 ```
 
-### Global {-}
-
-_`r if(heatmap_include) sprintf("%d samples × %d features", nrow(bio_matrix), ncol(bio_matrix))`_
-
-```{r heatmap-global, eval=heatmap_include, fig.width=max(10, (if(heatmap_orientation == "samples_x" || (heatmap_orientation == "auto" && nrow(bio_matrix) > ncol(bio_matrix))) nrow(bio_matrix)*0.30 else ncol(bio_matrix)*0.20))*fig_scale, fig.height=max(6, (if(heatmap_orientation == "samples_x" || (heatmap_orientation == "auto" && nrow(bio_matrix) > ncol(bio_matrix))) ncol(bio_matrix)*0.18 else nrow(bio_matrix)*0.27) + 2)*fig_scale, out.width="100%"}
-.draw_heatmap(bio_matrix, bio_meta, bio_de$variable_meta,
-              sprintf("Z-score heatmap (%s of %s) — global", heatmap_scale, heatmap_transform))
+```{r heatmap-general-precompute, include=FALSE, eval=heatmap_include && heatmap_general_on}
+.tg45 = .heatmap_targets(heatmap_general_scope)
+.d45  = .hm_fig_dims(.hm_scope_nrow(heatmap_general_scope), ncol(bio_matrix),
+                     heatmap_general_cfg$orientation, fig_scale,
+                     cell_size  = heatmap_general_cfg$cell_size,
+                     max_aspect = heatmap_general_cfg$cell_aspect)
 ```
 
-```{r heatmap-comp-precompute, include=FALSE, eval=heatmap_include && length(comparisons) > 0}
-# Pre-compute max sample count across comparison subsets so the shared
-# fig.height in heatmap-comparisons is tall enough for the largest group.
-.hm_comp_nrows = vapply(comparisons, function(comp){
-  cond = comp$subset
-  cond = if(is.null(cond)) list() else as.list(cond)
-  cond[[comp$compare$factor]] = comp$compare$levels
-  de_sub = de_subset(importData, conditions = cond)
-  nrow(de_sub$data)
-}, integer(1))
-.hm_max_nrow = if(length(.hm_comp_nrows)) max(.hm_comp_nrows) else nrow(bio_matrix)
-```
-
-```{r heatmap-comparisons, results="asis", eval=heatmap_include && length(comparisons) > 0, fig.width=max(10, (if(heatmap_orientation == "samples_x" || (heatmap_orientation == "auto" && (if(exists(".hm_max_nrow")) .hm_max_nrow else nrow(bio_matrix)) > ncol(bio_matrix))) (if(exists(".hm_max_nrow")) .hm_max_nrow else nrow(bio_matrix))*0.30 else ncol(bio_matrix)*0.20))*fig_scale, fig.height=max(6, (if(heatmap_orientation == "samples_x" || (heatmap_orientation == "auto" && (if(exists(".hm_max_nrow")) .hm_max_nrow else nrow(bio_matrix)) > ncol(bio_matrix))) ncol(bio_matrix)*0.18 else (if(exists(".hm_max_nrow")) .hm_max_nrow else nrow(bio_matrix))*0.27) + 2)*fig_scale, out.width="100%"}
-for(comp in comparisons){
-  cat(sprintf("\n### %s {-}\n\n", comp$name))
-
-  cond = comp$subset
-  cond = if(is.null(cond)) list() else as.list(cond)
-  cond[[comp$compare$factor]] = comp$compare$levels
-  de_sub = de_subset(importData, conditions = cond)
-
-  cat(sprintf("_%d samples × %d features_\n\n",
-              nrow(de_sub$data), ncol(de_sub$data)))
-
-  .draw_heatmap(de_sub$data, de_sub$sample_meta, de_sub$variable_meta,
-                sprintf("Z-score heatmap (%s of %s) — %s",
-                        heatmap_scale, heatmap_transform, comp$name))
+```{r heatmap-general, results="asis", eval=heatmap_include && heatmap_general_on, fig.width=(if(exists(".d45")) .d45$w else 10), fig.height=(if(exists(".d45")) .d45$h else 6), out.width="100%"}
+if(!length(.tg45))
+  cat(sprintf("_No render targets for scope '%s'._\n\n", heatmap_general_scope))
+for(tg in .tg45){
+  cat(sprintf("\n### %s {-}\n\n", tg$label))
+  cat(sprintf("_%d samples × %d features_\n\n", nrow(tg$M), ncol(tg$M)))
+  .draw_heatmap(tg$M, tg$smeta, tg$vmeta,
+                sprintf("%s of %s — %s", heatmap_general_cfg$scale,
+                        heatmap_general_cfg$transform, tg$label),
+                cfg = heatmap_general_cfg, canvas = .d45)
   cat("\n\n")
+}
+```
+
+## 4.6 Heatmap — top-changing per class {.tabset .tabset-fade}
+
+`r if(heatmap_include && !heatmap_topchg_on) "_Skipped — set_ \x60heatmap.top_changing.enabled: True\x60 _in YAML to enable._"`
+
+`r if(heatmap_include && heatmap_topchg_on) sprintf("Top %d features per \x60%s\x60 class. Comparison tabs rank by %s; the Global tab ranks by separation across \x60%s\x60 (no single contrast). Scope: **%s**. Feature labels: %s.", heatmap_topchg_n, heatmap_topchg_cfg$group_features_by %||% "class", heatmap_topchg_rank, heatmap_topchg_cfg$color_samples_by, heatmap_topchg_scope, heatmap_topchg_cfg$feature_labels)`
+
+```{r heatmap-topchg-precompute, include=FALSE, eval=heatmap_include && heatmap_topchg_on}
+.tg46 = .heatmap_targets(heatmap_topchg_scope)
+.gf46 = heatmap_topchg_cfg$group_features_by
+.n_cls46 = if(!is.null(.gf46) && .gf46 %in% colnames(bio_de$variable_meta)){
+  v = as.character(bio_de$variable_meta[[.gf46]]); length(unique(v[!is.na(v)]))
+} else 1L
+.d46 = .hm_fig_dims(.hm_scope_nrow(heatmap_topchg_scope),
+                    max(2, min(ncol(bio_matrix), heatmap_topchg_n * .n_cls46)),
+                    heatmap_topchg_cfg$orientation, fig_scale,
+                    cell_size  = heatmap_topchg_cfg$cell_size,
+                    max_aspect = heatmap_topchg_cfg$cell_aspect)
+```
+
+```{r heatmap-topchg, results="asis", eval=heatmap_include && heatmap_topchg_on, fig.width=(if(exists(".d46")) .d46$w else 10), fig.height=(if(exists(".d46")) .d46$h else 6), out.width="100%"}
+if(!length(.tg46))
+  cat(sprintf("_No render targets for scope '%s'._\n\n", heatmap_topchg_scope))
+for(tg in .tg46){
+  cat(sprintf("\n### %s {-}\n\n", tg$label))
+  kf = if(is.null(tg$comp))
+         .top_changing_global(colnames(tg$M), tg$M, tg$smeta, tg$vmeta,
+                              heatmap_topchg_cfg$color_samples_by,
+                              heatmap_topchg_cfg$group_features_by,
+                              heatmap_topchg_cfg$transform)
+       else
+         .top_changing(tg$comp$name, colnames(tg$M), tg$vmeta,
+                       group_by = heatmap_topchg_cfg$group_features_by)
+  Mk = tg$M[, kf, drop = FALSE]
+  rank_desc = if(is.null(tg$comp)) sprintf("%s separation", heatmap_topchg_cfg$color_samples_by) else heatmap_topchg_rank
+  cat(sprintf("_%d samples × %d features (top %d per class by %s)_\n\n",
+              nrow(Mk), ncol(Mk), heatmap_topchg_n, rank_desc))
+  .draw_heatmap(Mk, tg$smeta, tg$vmeta,
+                sprintf("%s of %s — %s (top-changing)", heatmap_topchg_cfg$scale,
+                        heatmap_topchg_cfg$transform, tg$label),
+                cfg = heatmap_topchg_cfg, canvas = .d46)
+  cat("\n\n")
+}
+```
+
+## 4.7 Heatmap — by class {.tabset .tabset-fade}
+
+`r if(heatmap_include && (!heatmap_split_on || is.null(heatmap_subclass_col))) "_Skipped — set_ \x60heatmap.split_by_class.enabled: True\x60 _and a_ \x60subclass_col\x60 _in YAML to enable._"`
+
+`r if(heatmap_include && heatmap_split_on && !is.null(heatmap_subclass_col)) sprintf("Split by \x60%s\x60 (%s). Scope: **%s**. %s Feature labels: %s.", heatmap_subclass_col, if(length(heatmap_subclass_vals)) paste(heatmap_subclass_vals, collapse=", ") else "all values", heatmap_split_scope, if(heatmap_split_multi=="combined") "Selected values combined in one heatmap (grouped by class)." else "One heatmap per value.", heatmap_split_cfg$feature_labels)`
+
+```{r heatmap-split-precompute, include=FALSE, eval=heatmap_include && heatmap_split_on && !is.null(heatmap_subclass_col)}
+.tg47 = .heatmap_targets(heatmap_split_scope)
+# 4.7 draws only the selected subclass values, so size the canvas to those
+# features - not to the whole panel, which would leave the drawn heatmap
+# floating in whitespace.
+.n_feat47 = local({
+  vm = as.data.frame(bio_de$variable_meta)
+  if(is.null(heatmap_subclass_col) ||
+     !heatmap_subclass_col %in% colnames(vm)) return(ncol(bio_matrix))
+  v    = as.character(vm[[heatmap_subclass_col]])
+  vals = if(length(heatmap_subclass_vals)) heatmap_subclass_vals
+         else unique(v[!is.na(v)])
+  n_per = vapply(vals, function(k) sum(v == k, na.rm = TRUE), integer(1))
+  # "combined" puts every selected class in one heatmap; "tabs" draws one per
+  # class, so the canvas only needs to hold the largest.
+  if(identical(heatmap_split_multi, "combined")) max(2L, sum(n_per))
+  else                                           max(2L, max(n_per))
+})
+
+.d47  = .hm_fig_dims(.hm_scope_nrow(heatmap_split_scope), .n_feat47,
+                     heatmap_split_cfg$orientation, fig_scale,
+                     cell_size  = heatmap_split_cfg$cell_size,
+                     max_aspect = heatmap_split_cfg$cell_aspect)
+```
+
+```{r heatmap-split, results="asis", eval=heatmap_include && heatmap_split_on && !is.null(heatmap_subclass_col), fig.width=(if(exists(".d47")) .d47$w else 10), fig.height=(if(exists(".d47")) .d47$h else 6), out.width="100%"}
+# Per scope target, split features by `subclass_col`. multi_class == "combined"
+# draws all selected values in one heatmap (grouped by the subclass column);
+# "tabs" draws one heatmap per value. `subclass_values` (if set) focuses values.
+split_col = heatmap_subclass_col
+for(tg in .tg47){
+  vmeta_t = tg$vmeta
+  if(!split_col %in% colnames(vmeta_t)){
+    cat(sprintf("\n### %s {-}\n\n_subclass_col '%s' not in feature_metadata — skipped._\n\n",
+                tg$label, split_col)); next
+  }
+  vals = sort(unique(as.character(vmeta_t[[split_col]])))
+  vals = vals[!is.na(vals) & nzchar(vals)]
+  if(length(heatmap_subclass_vals))
+    vals = intersect(vals, as.character(heatmap_subclass_vals))
+  if(!length(vals)){
+    cat(sprintf("\n### %s {-}\n\n_no values match subclass_values._\n\n", tg$label)); next
+  }
+  if(heatmap_split_multi == "combined"){
+    feats_v = intersect(vmeta_t$Compound[as.character(vmeta_t[[split_col]]) %in% vals],
+                        colnames(tg$M))
+    if(length(feats_v) < 2){
+      cat(sprintf("\n### %s {-}\n\n_too few features._\n\n", tg$label)); next
+    }
+    cat(sprintf("\n### %s {-}\n\n", tg$label))
+    cat(sprintf("_%d samples × %d features across %s: %s_\n\n",
+                nrow(tg$M), length(feats_v), split_col, paste(vals, collapse = ", ")))
+    .draw_heatmap(tg$M[, feats_v, drop = FALSE], tg$smeta, vmeta_t,
+                  sprintf("%s — %s", tg$label, paste(vals, collapse = " / ")),
+                  cfg = heatmap_split_cfg, canvas = .d47, group_by = split_col)
+    cat("\n\n")
+  } else {
+    for(v in vals){
+      feats_v = intersect(vmeta_t$Compound[as.character(vmeta_t[[split_col]]) == v],
+                          colnames(tg$M))
+      if(length(feats_v) < 2) next
+      cat(sprintf("\n### %s — %s: %s {-}\n\n", tg$label, split_col, v))
+      cat(sprintf("_%d samples × %d features_\n\n", nrow(tg$M), length(feats_v)))
+      .draw_heatmap(tg$M[, feats_v, drop = FALSE], tg$smeta, vmeta_t,
+                    sprintf("%s — %s = %s", tg$label, split_col, v),
+                    cfg = heatmap_split_cfg, canvas = .d47)
+      cat("\n\n")
+    }
+  }
 }
 ```
 
@@ -1217,7 +1392,7 @@ Ratios are **not** carried into heatmap, PCA, volcano, or the comparisons table.
 
 `r if(!ion_ratios_enabled) "_No ion ratios defined — add an_ \x60ion_ratios:\x60 _block with a_ \x60ratios:\x60 _list to_ \x60stats_report\x60 _in the YAML to enable this section._"`
 
-```{r ion-ratios, results="asis", eval=ion_ratios_enabled, fig.width=max(8, length(comparisons)*3.5)*fig_scale, fig.height=5.5*fig_scale}
+```{r ion-ratios, results="asis", eval=ion_ratios_enabled && !is.null(stats_tables), fig.width=max(8, length(comparisons)*3.5)*fig_scale, fig.height=5.5*fig_scale}
 has_comps_ir  = length(comparisons) > 0
 has_factor_ir = boxplot_enabled && length(boxplot_factors) > 0
 
@@ -1240,10 +1415,12 @@ for(ratio_cfg in ion_ratios_list){
     next
   }
 
-  ratio_all                        = as.numeric(data_matrix[[num_col]]) /
-                                     as.numeric(data_matrix[[den_col]])
-  ratio_all[!is.finite(ratio_all)] = NA
-  names(ratio_all)                 = rownames(data_matrix)
+  # Values come from run_stats()$ion_ratios, so the plots and the ion_ratios
+  # sheet of the stats workbook are the same numbers.
+  .ir_all  = stats_tables$ion_ratios
+  .ir_this = .ir_all[.ir_all$ratio == ratio_lbl & is.na(.ir_all$comparison), ,
+                     drop = FALSE]
+  ratio_all = stats::setNames(.ir_this$value, .ir_this$sample)
 
   # ---- By comparison -------------------------------------------------------
   if(has_comps_ir){
@@ -1256,7 +1433,7 @@ for(ratio_cfg in ion_ratios_list){
       if(!isTRUE(comp$enabled %||% TRUE)) next
       cond = if(is.null(comp$subset)) list() else as.list(comp$subset)
       cond[[comp$compare$factor]] = comp$compare$levels
-      de_sub = tryCatch(de_subset(importData, conditions = cond),
+      de_sub = tryCatch(subset_dataset(importData, conditions = cond),
                         error = function(e) NULL)
       if(is.null(de_sub) || nrow(de_sub$sample_meta) == 0) next
 
@@ -1264,27 +1441,25 @@ for(ratio_cfg in ion_ratios_list){
       sub_ratio = ratio_all[sub_rn]
       sub_grp   = factor(de_sub$sample_meta[[comp$compare$factor]],
                          levels = comp$compare$levels)
+      sub_sid   = if(sample_id_head %in% colnames(de_sub$sample_meta))
+                    as.character(de_sub$sample_meta[[sample_id_head]]) else sub_rn
+      sub_gsf   = if(global_summary_factor %in% colnames(de_sub$sample_meta))
+                    as.character(de_sub$sample_meta[[global_summary_factor]]) else NA_character_
 
       long_rows_ir[[length(long_rows_ir) + 1]] = data.frame(
         .comparison = comp$name,
         .group      = sub_grp,
-        .sample_id  = sub_rn,
+        .sample_id  = sub_sid,
         ratio_value = sub_ratio,
-        .tooltip    = sprintf("Sample: %s<br>%s: %.3g",
-                              sub_rn, ratio_lbl, sub_ratio),
+        .tooltip    = .point_tooltip(sub_sid, sub_gsf, sub_ratio, ylab = "ratio"),
         stringsAsFactors = FALSE
       )
 
       ngrp = length(comp$compare$levels)
-      pval = tryCatch({
-        if(ngrp == 2){
-          g1 = sub_ratio[sub_grp == comp$compare$levels[1]]
-          g2 = sub_ratio[sub_grp == comp$compare$levels[2]]
-          wilcox.test(g1, g2, exact = FALSE)$p.value
-        } else {
-          kruskal.test(sub_ratio, sub_grp)$p.value
-        }
-      }, error = function(e) NA_real_)
+      .ir_comp = .ir_all[.ir_all$ratio == ratio_lbl &
+                         !is.na(.ir_all$comparison) &
+                         .ir_all$comparison == comp$name, , drop = FALSE]
+      pval = if(nrow(.ir_comp)) .ir_comp$p_value[1] else NA_real_
 
       plab = if(is.na(pval))  "p = NA"    else
              if(pval < 0.001) "p < 0.001" else
@@ -1307,26 +1482,41 @@ for(ratio_cfg in ion_ratios_list){
       anno_ir        = dplyr::bind_rows(anno_rows_ir)
       anno_ir$.group = factor(anno_ir$.group, levels = levels(long_ir$.group))
 
-      y_lim = quantile(long_ir$ratio_value, prob = yaxis_quant, na.rm = TRUE) * 1.3
+      y_lim = quantile(long_ir$ratio_value, prob = yaxis_quant, na.rm = TRUE) * yaxis_scalar
       y_ann = y_lim * 0.97
 
-      p_base = ggplot2::ggplot(long_ir,
-                               ggplot2::aes(x = .group, y = ratio_value,
-                                            fill = .group)) +
-        ggplot2::coord_cartesian(ylim = c(0, y_lim)) +
-        ggplot2::labs(x = NULL, y = "ratio", title = ratio_lbl) +
-        ggplot2::facet_wrap(~ .comparison, scales = "free_x", nrow = 1) +
-        ggplot2::geom_text(
-          data        = anno_ir,
-          ggplot2::aes(x = .group, label = label),
-          y           = y_ann,
-          hjust       = 0.5, vjust = 1,
-          size        = 3.2, fontface = "italic", color = "grey30",
-          inherit.aes = FALSE
-        ) +
-        boxplot_theme
+      .ir_de = struct::DatasetExperiment(
+        data          = data.frame(ratio = long_ir$ratio_value,
+                                   row.names = make.unique(long_ir$.sample_id)),
+        sample_meta   = local({
+          m = data.frame(.group      = long_ir$.group,
+                         .comparison = long_ir$.comparison,
+                         row.names   = make.unique(long_ir$.sample_id))
+          m[[sample_id_head]] = long_ir$.sample_id
+          m
+        }),
+        variable_meta = data.frame(Compound = "ratio",
+                                   row.names = "ratio"))
 
-      plots_ir = .compound_plots(p_base, plot_type, plot_error_bar)
+      # The Wilcoxon / Kruskal annotation is report presentation, so it is
+      # layered on top of the returned plot rather than baked into
+      # plot_boxplot().
+      plots_ir = lapply(if(plot_type == "both") c("box", "bar") else plot_type,
+        function(ty)
+          plot_boxplot(.ir_de, "ratio", ".group", facet_by = ".comparison",
+                       type           = ty,
+                       error_bar      = plot_error_bar,
+                       value_label    = "ratio",
+                       sample_id_head = sample_id_head,
+                       yaxis_quant    = yaxis_quant,
+                       yaxis_scalar   = yaxis_scalar) +
+            ggplot2::labs(title = ratio_lbl) +
+            ggplot2::geom_text(data = anno_ir,
+                               ggplot2::aes(x = .group, label = label),
+                               y = y_ann, hjust = 0.5, vjust = 1, size = 3.2,
+                               fontface = "italic", color = "grey30",
+                               inherit.aes = FALSE))
+      names(plots_ir) = if(plot_type == "both") c("box", "bar") else plot_type
       for(pname in names(plots_ir)){
         if(plot_type == "both")
           cat(sprintf('<div style="margin-top:10px;"><b>%s</b></div>\n',
@@ -1347,25 +1537,43 @@ for(ratio_cfg in ion_ratios_list){
 
     for(f in boxplot_factors){
       if(!f %in% colnames(ir_meta)) next
+      sid_ir = if(sample_id_head %in% colnames(ir_meta))
+                 as.character(ir_meta[[sample_id_head]]) else rownames(ir_meta)
       df_f = data.frame(group     = as.character(ir_meta[[f]]),
                         value     = ir_ratio,
-                        sample_id = rownames(ir_meta),
+                        sample_id = sid_ir,
+                        gsf       = if(global_summary_factor %in% colnames(ir_meta))
+                                      as.character(ir_meta[[global_summary_factor]]) else NA_character_,
                         stringsAsFactors = FALSE)
       df_f = df_f[!is.na(df_f$group), ]
       if(nrow(df_f) == 0) next
 
-      df_f$.tooltip = sprintf("Sample: %s<br>%s: %.3g",
-                              df_f$sample_id, ratio_lbl, df_f$value)
+      df_f$.tooltip = .point_tooltip(df_f$sample_id, df_f$gsf, df_f$value, ylab = "ratio")
 
-      y_lim_f = quantile(df_f$value, prob = yaxis_quant, na.rm = TRUE) * 1.3
-      p_f = ggplot2::ggplot(df_f, ggplot2::aes(group, value, fill = group)) +
-        ggplot2::coord_cartesian(ylim = c(0, y_lim_f)) +
-        ggplot2::scale_fill_brewer(palette = "Set1", na.value = "grey60") +
-        ggplot2::labs(x = NULL, y = "ratio",
-                      title = sprintf("%s — by %s", ratio_lbl, f)) +
-        boxplot_theme
+      .irf_de = struct::DatasetExperiment(
+        data          = data.frame(ratio = df_f$value,
+                                   row.names = make.unique(df_f$sample_id)),
+        sample_meta   = local({
+          m = data.frame(.group = df_f$group,
+                         row.names = make.unique(df_f$sample_id))
+          m[[sample_id_head]]        = df_f$sample_id
+          m[[global_summary_factor]] = df_f$gsf
+          m
+        }),
+        variable_meta = data.frame(Compound = "ratio", row.names = "ratio"))
 
-      plots_f = .compound_plots(p_f, plot_type, plot_error_bar)
+      plots_f = lapply(if(plot_type == "both") c("box", "bar") else plot_type,
+        function(ty)
+          plot_boxplot(.irf_de, "ratio", ".group",
+                       type           = ty,
+                       error_bar      = plot_error_bar,
+                       value_label    = "ratio",
+                       sample_id_head = sample_id_head,
+                       tooltip_factor = global_summary_factor,
+                       yaxis_quant    = yaxis_quant,
+                       yaxis_scalar   = yaxis_scalar) +
+            ggplot2::labs(title = sprintf("%s — by %s", ratio_lbl, f)))
+      names(plots_f) = if(plot_type == "both") c("box", "bar") else plot_type
       for(pname in names(plots_f)){
         if(plot_type == "both")
           cat(sprintf('<div style="margin-top:10px;"><b>%s</b></div>\n',
@@ -1390,9 +1598,9 @@ Pairwise feature correlations within each subset, one heatmap per
 
 ```{r corr-heatmaps, results="asis", eval=!is.null(stats_tables) && nrow(stats_tables$correlations) > 0, fig.width=8*fig_scale, fig.height=7*fig_scale}
 # One heatmap per (correlation × subset × method).
-# Optional clustering controlled by `correlations[i].cluster:` in YAML; we
-# read it back from `report_pars$correlations` (the YAML list) by name.
-corr_yaml = report_pars$correlations %||% list()
+# Optional clustering controlled by `correlations.entries[i].cluster:` in
+# YAML; `correlations` (unpacked at the top) is the entries list.
+corr_yaml = correlations
 get_yaml_opt = function(name, opt, default){
   for(c in corr_yaml) if(identical(c$name, name) && !is.null(c[[opt]])) return(c[[opt]])
   default
@@ -1408,93 +1616,17 @@ for(i in seq_len(nrow(combos))){
 
   cat(sprintf("\n### %s — %s — %s {-}\n\n", cn, sb, mt))
 
-  sub = cdf[cdf$correlation == cn & cdf$subset == sb & cdf$method == mt, ,
-            drop = FALSE]
-  if(nrow(sub) == 0){ cat("_(empty)_\n\n"); next }
+  p = plot_correlation(cdf, if(exists("bio_de")) bio_de else NULL,
+                       name        = cn,
+                       subset      = sb,
+                       method      = mt,
+                       group_by    = heatmap_group_features_by,
+                       cluster     = cluster_yn,
+                       show_values = show_values)
+  if(is.null(p)){ cat("_(empty)_
 
-  # Reshape lower-triangle long → full square matrix.
-  # Use first-seen order (= import order from .pairwise_cor_long); the
-  # cluster step below may reorder it.
-  feats = unique(c(sub$feature_a, sub$feature_b))
-  M = matrix(NA_real_, nrow = length(feats), ncol = length(feats),
-             dimnames = list(feats, feats))
-  for(k in seq_len(nrow(sub))){
-    a = sub$feature_a[k]; b = sub$feature_b[k]; r = sub$estimate[k]
-    M[a, b] = r; M[b, a] = r
-  }
-  # Self-self cells are dropped from the long table by default — leave them
-  # as NA so the heatmap renders the diagonal in `na.value` grey, signalling
-  # "self-correlation, omitted". (When include_self: True they're filled.)
+"); next }
 
-  if(cluster_yn && length(feats) > 2){
-    d  = stats::as.dist(1 - abs(M))
-    hc = tryCatch(stats::hclust(d, method = "average"), error = function(e) NULL)
-    if(!is.null(hc)) feats = feats[hc$order]
-  }
-
-  long = expand.grid(feature_a = feats, feature_b = feats,
-                     stringsAsFactors = FALSE)
-  long$r = M[cbind(long$feature_a, long$feature_b)]
-  long$feature_a = factor(long$feature_a, levels = feats)
-  long$feature_b = factor(long$feature_b, levels = rev(feats))
-
-  # Axis label colours: match the group_features_by annotation used in the
-  # general heatmap. Falls back to black if the column is not set / not found.
-  grp_col   = heatmap_group_features_by
-  vmeta_here = if(exists("bio_de")) bio_de$variable_meta else NULL
-  axis_col_x = "black"
-  axis_col_y = "black"
-  grp_legend = NULL
-  if(!is.null(grp_col) && !is.null(vmeta_here) &&
-     grp_col %in% colnames(vmeta_here) &&
-     "Compound" %in% colnames(vmeta_here)){
-    grp_vals   = as.character(vmeta_here[[grp_col]][
-                   match(feats, vmeta_here$Compound)])
-    grp_vals[is.na(grp_vals)] = "unknown"
-    grp_levels = unique(grp_vals)
-    pal        = scales::hue_pal()(length(grp_levels))
-    names(pal) = grp_levels
-    axis_col_x = unname(pal[grp_vals])              # x order = feats
-    axis_col_y = unname(pal[rev(grp_vals)])          # y order = rev(feats)
-    # Build a tiny legend data.frame for annotation
-    grp_legend = data.frame(x = NA_real_, y = NA_real_,
-                            grp = factor(grp_levels, levels = grp_levels))
-  }
-
-  p = ggplot2::ggplot(long, ggplot2::aes(feature_a, feature_b, fill = r)) +
-        ggplot2::geom_tile(color = "white", linewidth = 0.1) +
-        ggplot2::scale_fill_gradient2(low = "#2166ac", mid = "white",
-                                      high = "#b2182b", midpoint = 0,
-                                      limits = c(-1, 1), na.value = "grey90") +
-        ggplot2::coord_fixed() +
-        ggplot2::theme_classic(base_size = 10) +
-        ggplot2::theme(
-          axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5,
-                                              hjust = 1, size = 6,
-                                              colour = axis_col_x),
-          axis.text.y = ggplot2::element_text(size = 6,
-                                              colour = axis_col_y),
-          legend.position = "right"
-        ) +
-        ggplot2::labs(x = NULL, y = NULL, fill = mt,
-                      title = sprintf("%s — %s — %s", cn, sb, mt))
-
-  # Overlay invisible points carrying the group colour scale so a legend appears.
-  if(!is.null(grp_legend)){
-    p = p +
-      ggplot2::geom_point(data = grp_legend,
-                          ggplot2::aes(x = x, y = y, colour = grp),
-                          inherit.aes = FALSE, na.rm = TRUE, size = 3) +
-      ggplot2::scale_colour_manual(values = pal, name = grp_col,
-                                   drop = FALSE) +
-      ggplot2::guides(colour = ggplot2::guide_legend(
-        override.aes = list(size = 3, shape = 15)))
-  }
-
-  if(show_values && length(feats) <= 30){
-    p = p + ggplot2::geom_text(ggplot2::aes(label = sprintf("%.2f", r)),
-                               size = 2)
-  }
   print(p); cat("\n\n")
 }
 ```

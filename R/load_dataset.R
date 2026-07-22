@@ -1,6 +1,6 @@
 #' Load a `DatasetExperiment` from `.RDS` or `.xlsx`
 #'
-#' Used by [`combine_datasets()`] so the combine pipeline can mix RDS and
+#' Used by [`combine_datasets()`] so the combine workflow can mix RDS and
 #' xlsx inputs (xlsx loading reconstructs a `DatasetExperiment` from the
 #' standard sheets `feature_metadata`, `sample_metadata`, `matrix` written
 #' by [`run_MRManalyzeR()`]).
@@ -12,6 +12,17 @@
 #' @param sample_id_col Column in `sample_metadata` used as the row-name
 #'   key when loading from xlsx. Default `"Sample_ID"`.
 #' @return A `struct::DatasetExperiment`.
+#' @examples
+#' de <- struct::DatasetExperiment(
+#'   data          = data.frame(A = c(1, 2), B = c(3, 4),
+#'                              row.names = c("S1", "S2")),
+#'   sample_meta   = data.frame(Sample_ID = c("S1", "S2"),
+#'                              row.names = c("S1", "S2")),
+#'   variable_meta = data.frame(Compound = c("A", "B"),
+#'                              row.names = c("A", "B")))
+#' f <- tempfile(fileext = ".RDS"); saveRDS(de, f)
+#' load_dataset(f)
+#' @family data parse
 #' @export
 load_dataset = function(path, sample_id_col = "Sample_ID"){
 
@@ -36,7 +47,7 @@ load_dataset = function(path, sample_id_col = "Sample_ID"){
       missing_in_vm = setdiff(dat_cn, as.character(vm$Compound))
       if(length(missing_in_vm)){
         stop(sprintf(
-          "[load_dataset] %s: %d data column(s) have no matching Compound row in variable_meta (e.g. %s). The RDS appears to have drifted between data and variable_meta — re-export from the source xlsx.",
+          "[load_dataset] %s: %d data column(s) have no matching Compound row in variable_meta (e.g. %s). The RDS appears to have drifted between data and variable_meta - re-export from the source xlsx.",
           path, length(missing_in_vm),
           paste(head(missing_in_vm, 5), collapse = ", ")))
       }

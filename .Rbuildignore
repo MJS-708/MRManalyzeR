@@ -1,2 +1,14 @@
 ^.*\.Rproj$
 ^\.Rproj\.user$
+^_
+^combine_data_helpers\.R$
+^CLAUDE\.md$
+^\.claude$
+^LICENSE\.md$
+^MRManalyzeR\.BiocCheck$
+^doc$
+^Meta$
+^data-raw$
+^docs$
+^pkgdown$
+^_pkgdown\.yml$

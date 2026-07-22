@@ -14,7 +14,8 @@ combine_datasets(
   sample_id_col = "Sample_ID",
   drop_samples = NULL,
   prefix_features = FALSE,
-  combined_name = "combined"
+  combined_name = "combined",
+  duplicate_samples = c("error", "first", "mean", "median")
 )
 }
 \arguments{
@@ -22,11 +23,11 @@ combine_datasets(
 named (names are used as dataset tags); otherwise the filename stem
 is used as the tag.}
 
-\item{feature_meta_cols}{Character vector — `variable_meta` columns kept
+\item{feature_meta_cols}{Character vector - `variable_meta` columns kept
 in the merged dataset. `NULL` (default) = intersect across inputs.
 Missing columns in any single input are filled with `NA`.}
 
-\item{sample_meta_cols}{Character vector — `sample_meta` columns kept in
+\item{sample_meta_cols}{Character vector - `sample_meta` columns kept in
 the merged dataset. `NULL` (default) = intersect across inputs.}
 
 \item{feature_meta_rename}{Optional named list. Names are dataset tags
@@ -50,11 +51,18 @@ merged result.}
 \item{prefix_features}{Controls feature-name prefixing. `FALSE` (default):
 never prefix. `TRUE`: always prefix every feature with its dataset tag
 (e.g. `GOM__PGE2`). `"auto"`: prefix only features whose names collide
-across two or more inputs — note that the resulting names depend on which
+across two or more inputs - note that the resulting names depend on which
 datasets are combined, so `"auto"` is not stable across different combine
 runs.}
 
 \item{combined_name}{Name attribute of the resulting `DatasetExperiment`.}
+
+\item{duplicate_samples}{What to do when a dataset holds more than one row
+with the same `sample_id_col`. `"error"` (default) stops and names them;
+`"first"` keeps the first occurrence; `"mean"` or `"median"` aggregate the
+measurements, taking metadata from the first row. A duplicate is either a
+deliberate re-injection or a data-entry error and those want opposite
+treatment, so the caller decides rather than the package.}
 }
 \value{
 A single `struct::DatasetExperiment` containing the merged data.
@@ -63,7 +71,7 @@ A single `struct::DatasetExperiment` containing the merged data.
 Used to merge separately-acquired LC-MS panels (e.g. GOM, cysLT, SPM) that
 share a common set of biological samples. Inputs can be either `.RDS`
 files (containing a `struct::DatasetExperiment`) or `.xlsx` workbooks
-produced by [`run_MRManalyzeR()`] — see [`load_dataset()`].
+produced by [`run_MRManalyzeR()`] - see [`load_dataset()`].
 }
 \details{
 Defaults:
@@ -75,3 +83,28 @@ Defaults:
   \item Data matrices are `cbind`'d on the common samples.
 }
 }
+\examples{
+mk <- function(feats) struct::DatasetExperiment(
+  data = as.data.frame(matrix(1, 3, length(feats),
+           dimnames = list(c("S1", "S2", "S3"), feats))),
+  sample_meta = data.frame(Sample_ID = c("S1", "S2", "S3"),
+           row.names = c("S1", "S2", "S3")),
+  variable_meta = data.frame(Compound = feats, row.names = feats))
+d <- tempfile("comb_"); dir.create(d)
+p1 <- file.path(d, "a.RDS"); saveRDS(mk(c("A", "B")), p1)
+p2 <- file.path(d, "c.RDS"); saveRDS(mk(c("C", "D")), p2)
+combine_datasets(c(A = p1, B = p2))
+}
+\seealso{
+Other data parse:
+\code{\link[=assemble_dataset]{assemble_dataset()}},
+\code{\link[=load_config]{load_config()}},
+\code{\link[=load_dataset]{load_dataset()}},
+\code{\link[=read_peak_matrix]{read_peak_matrix()}},
+\code{\link[=read_skyline]{read_skyline()}},
+\code{\link[=read_targetlynx]{read_targetlynx()}},
+\code{\link[=validate_config]{validate_config()}},
+\code{\link[=validate_design]{validate_design()}},
+\code{\link[=validate_input]{validate_input()}}
+}
+\concept{data parse}
