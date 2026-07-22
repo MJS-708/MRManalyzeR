@@ -23,20 +23,28 @@
 #' samples than between replicate injections of identical material. `CV_QC` is
 #' `NA` when a run contains no QC injections.
 #'
-#' Output filenames are derived from `paths.fn` + `paths.datatype` +
-#' `paths.suffix`, so when `PeakMatrixProcessing.execute: False` the code
-#' can still locate the existing RDS without re-reading the source xlsx.
+#' Output filenames are derived from `paths.fn` + `datatype` +
+#' `paths.suffix`, so when `PeakMatrixProcessing.execute: False` the code can
+#' still locate the existing RDS without re-reading the source xlsx. Those
+#' three must therefore match the stored file; if they do not, the error
+#' lists the `.RDS` files that are in `paths.result_dir`.
+#'
+#' `datatype` is read from the enabled data-source block: `datatype:` under
+#' `tl_data:` / `matrix_data:`, and `signal_filter:` under `skyline_data:`,
+#' where the LOD / LOQ floor is what distinguishes one run from another. Any
+#' of them may be a list, in which case the whole workflow runs once per entry.
 #'
 #' Backwards compatibility:
 #' \itemize{
-#'   \item `paths.datatype` falls back to `PeakMatrixProcessing.datatype` if absent.
+#'   \item `datatype` falls back to `PeakMatrixProcessing:` and then `paths:`,
+#'     where earlier configs put it. Setting it in two places warns.
 #'   \item Legacy `UVA_report:` / `MVA_report:` blocks are recognised when
 #'     `data_quality_report:` / `stats_report:` are missing.
 #' }
 #'
 #' @param path_yaml Full path to a project YAML.
 #' @return Invisibly, a list with the `DatasetExperiment`, `removed_features`,
-#'   `stats_tables`, and the resolved output paths. When `paths.datatype` is a
+#'   `stats_tables`, and the resolved output paths. When `datatype` is a
 #'   vector (e.g. `["Area", "Response", "Conc"]`), the function loops over each
 #'   datatype and returns a list of per-datatype results.
 #' @examples
@@ -75,14 +83,13 @@ run_MRManalyzeR = function(path_yaml){
 
 
   # --- Datatype loop ------------------------------------------------------
-  # `datatype` may live in paths: (new) or PeakMatrixProcessing: (legacy).
   # Accept either a scalar ("Area") or a vector (["Area", "Response", "Conc"]).
-  datatypes = project_paths$datatype %||% pmp_params$datatype %||% "Area"
+  datatypes = .resolve_datatype(pmp_params, project_paths)
   if(length(datatypes) > 1){
     results = lapply(datatypes, function(dt){
       message(sprintf("\n========== Datatype: %s ==========", dt))
-      pp_one = project_paths;             pp_one$datatype = dt
-      pmp_one = pmp_params;               pmp_one$datatype = dt
+      pp_one  = project_paths;            pp_one$datatype = dt
+      pmp_one = .narrow_datatype(pmp_params, dt)
       pp_proj_one = project_params
       pp_proj_one$project$paths = pp_one
       pp_proj_one$project$PeakMatrixProcessing = pmp_one
@@ -109,11 +116,116 @@ run_MRManalyzeR = function(path_yaml){
 }
 
 
+#' Resolve `datatype` - the reported value - from the config
+#'
+#' Read from the enabled data-source block first, because the thing that
+#' distinguishes one run from another differs by vendor:
+#' \itemize{
+#'   \item `tl_data:` and `matrix_data:` use `datatype:` - a TargetLynx units
+#'     tag ("Area", "Response", "ng/mL"), or a label for a generic matrix.
+#'   \item `skyline_data:` uses `signal_filter:`. A Skyline export carries no
+#'     units tag, so the LOD / LOQ floor being applied is the only thing that
+#'     separates one run from another, and a second key naming the same
+#'     distinction would only be a second place to get it wrong.
+#' }
+#' `PeakMatrixProcessing:` and then `paths:` are still honoured, because that
+#' is where earlier configs put it.
+#'
+#' @param pmp_params The `PeakMatrixProcessing:` block.
+#' @param project_paths The `paths:` block.
+#' @return Character vector of one or more datatypes.
+#' @keywords internal
+#' @noRd
+.resolve_datatype = function(pmp_params, project_paths){
+
+  sources = c("tl_data", "skyline_data", "matrix_data")
+  enabled = sources[vapply(sources, function(s)
+    isTRUE(pmp_params[[s]]$enabled), logical(1))]
+
+  # Exactly one source is expected to be enabled; process_dataset() is what
+  # enforces that, so here an ambiguous config simply falls through to the
+  # block-level setting rather than guessing which reader was meant.
+  from_source = if(length(enabled) != 1L) NULL
+                else .source_datatype(enabled, pmp_params[[enabled]])
+  from_block  = pmp_params$datatype %||% project_paths$datatype
+
+  if(!is.null(from_source) && !is.null(from_block) &&
+     !identical(from_source, from_block))
+    warning(sprintf(
+      "datatype is set in both %s (%s) and above it (%s). Using the %s value.",
+      enabled, paste(from_source, collapse = ", "),
+      paste(from_block, collapse = ", "), enabled), call. = FALSE)
+
+  dt = from_source %||% from_block
+  if(is.null(dt)){
+    # Silently defaulting here renames every output file, which surfaces much
+    # later as "expected RDS not found" rather than as the missing key it is.
+    warning(sprintf(
+      "No datatype found in the config; defaulting to \"Area\", which names the output files. %s",
+      if(identical(enabled, "skyline_data"))
+        "Set signal_filter: in the skyline_data block, or datatype: above it."
+      else if(length(enabled) == 1L)
+        sprintf("Add `datatype:` to the %s block.", enabled)
+      else "Enable exactly one data source and give it a `datatype:`."),
+      call. = FALSE)
+    dt = "Area"
+  }
+  as.character(dt)
+}
+
+#' The field a given source block uses to name its reported value
+#' @keywords internal
+#' @noRd
+.source_datatype = function(source_name, blk){
+  if(identical(source_name, "skyline_data")){
+    sf = blk$signal_filter
+    # FALSE is "apply no floor", which is a valid choice but not a label -
+    # fall through so the run is named by datatype: instead of "FALSE".
+    if(is.null(sf) || isFALSE(sf)) NULL else sf
+  } else {
+    blk$datatype
+  }
+}
+
+#' Pin a multi-valued config down to the single datatype being run
+#'
+#' The loop runs the whole workflow once per entry, so the source block itself
+#' has to be narrowed and not just the top-level copy: [read_skyline()] indexes
+#' `feature_metadata` by `signal_filter`, and a two-element list is not a
+#' column name.
+#'
+#' @param pmp_params The `PeakMatrixProcessing:` block.
+#' @param dt One datatype.
+#' @return `pmp_params`, narrowed.
+#' @keywords internal
+#' @noRd
+.narrow_datatype = function(pmp_params, dt){
+  pmp_params$datatype = dt
+  if(isTRUE(pmp_params$skyline_data$enabled)){
+    # Only when signal_filter is what supplied the datatype: a config that
+    # deliberately applies no floor must keep applying none.
+    sf = pmp_params$skyline_data$signal_filter
+    if(!is.null(sf) && !isFALSE(sf))
+      pmp_params$skyline_data$signal_filter = dt
+  } else if(isTRUE(pmp_params$tl_data$enabled)){
+    pmp_params$tl_data$datatype = dt
+  } else if(isTRUE(pmp_params$matrix_data$enabled)){
+    pmp_params$matrix_data$datatype = dt
+  }
+  pmp_params
+}
+
 #' Single-datatype runner extracted from [`run_MRManalyzeR()`].
 #' @keywords internal
 #' @noRd
 .run_MRManalyzeR_one = function(project_params, project_paths, pmp_params,
                                 dq_params, st_params, datatype){
+
+  # The resolved datatype is written back so the report templates see it
+  # wherever the config happened to declare it - they fall back to it for the
+  # axis / matrix value label when `units:` is unset - and so the source block
+  # holds a single value rather than the list that was looped over.
+  pmp_params = .narrow_datatype(pmp_params, datatype)
 
   units_tag = gsub("/", "_", datatype)
   out_stub  = sprintf("%s/%s_%s%s",
@@ -137,12 +249,22 @@ run_MRManalyzeR = function(path_yaml){
     combined_datamatrices = out$combined_datamatrices
     removed_features      = out$removed_features
   } else {
-    if(!file.exists(out_RDS))
+    if(!file.exists(out_RDS)){
+      # The name is built from fn / datatype / suffix, so a mismatch is a
+      # config error rather than a missing file. Listing what is actually in
+      # result_dir turns "work out the name" into "read it off this list".
+      avail = list.files(project_paths$result_dir, pattern = "\\.RDS$")
       stop(sprintf(
-        "PeakMatrixProcessing.execute is FALSE but expected RDS not found:\n  %s\n%s",
+        "PeakMatrixProcessing.execute is FALSE but no stored dataset was found:\n  %s\n\n%s\n\n%s",
         out_RDS,
-        "Re-run with execute: True at least once, or fix paths.fn / paths.datatype."
+        if(length(avail))
+          paste0("Available in ", project_paths$result_dir, ":\n  ",
+                 paste(avail, collapse = "\n  "))
+        else
+          paste0("No .RDS files in ", project_paths$result_dir, "."),
+        "The name is <fn>_<datatype><suffix>.RDS - set paths.fn, datatype and paths.suffix to match one of these, or re-run with execute: True."
       ))
+    }
     message("Skipping PeakMatrixProcessing (execute: False). Loading: ", out_RDS)
     combined_datamatrices = readRDS(out_RDS)
     removed_features      = data.frame()    # not available without re-processing
@@ -257,7 +379,8 @@ run_MRManalyzeR = function(path_yaml){
 
   # Data source is selected by two mutually-exclusive nested blocks, each
   # with its own `enabled:` toggle and source-specific params:
-  #   skyline_data: { enabled, data_tab_names, signal_filter }   # LOD/LOQ
+  #   skyline_data: { enabled, data_tab_names, signal_filter }   # LOD/LOQ,
+  #                                                              # doubles as datatype
   #   tl_data:      { enabled, data_tab_names, tl_headers, snr }  # SNR
   #   matrix_data:  { enabled, data_tab_names, id_col, orientation,
   #                   signal_filter }                             # LOD/LOQ
@@ -513,7 +636,7 @@ run_MRManalyzeR = function(path_yaml){
 #' \itemize{
 #'   \item `<output_stub>.RDS`        - merged `DatasetExperiment`
 #'   \item `<output_stub>.xlsx`       - feature_metadata / sample_metadata / matrix tabs
-#'   \item `<output_stub>_stats.xlsx` - stats / correlations / linear_models
+#'   \item `<output_stub>_stats.xlsx` - key / stats / correlations / linear_models
 #'   \item `<output_stub>_stats_report.html`
 #' }
 #'

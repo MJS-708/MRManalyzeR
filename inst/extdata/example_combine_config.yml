@@ -16,7 +16,7 @@
 #      variable_meta, and writes:
 #         <output_stub>.RDS         — merged DatasetExperiment
 #         <output_stub>.xlsx        — feature_metadata / sample_metadata / matrix
-#         <output_stub>_stats.xlsx  — stats / correlations / linear_models
+#         <output_stub>_stats.xlsx  — key / stats / correlations / linear_models
 #         <output_stub>_stats_report.html
 #
 # PeakMatrixProcessing and the data_quality_report are NOT run in this mode.

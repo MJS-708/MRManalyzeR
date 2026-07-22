@@ -778,6 +778,12 @@ Outputs are written next to your data: the processed matrix as `.xlsx` and
 `ion_ratios` and `summary`, the two self-contained HTML reports, and a text
 file recording the exact parameters used.
 
+The stats workbook opens on a `key` sheet defining every column heading it
+contains -- what `adjust_family` covers, how `log2FC` is signed, which effect
+size `effect_type` names. The workbook usually outlives the session that
+produced it, so it carries its own glossary rather than relying on this
+vignette.
+
 ## Merging several acquisition panels
 
 Where a study is split across methods -- a polar-acid and a polar-basic panel,

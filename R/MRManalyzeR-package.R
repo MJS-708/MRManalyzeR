@@ -92,11 +92,17 @@ utils::globalVariables(c("ID", "ID2", "Name", "S/N", "Report", "Compound"))
 .ltc = list(
   # Reordered from the ltc original so the strong, maximally separable hues
   # come first - blue, red, green, yellow, black, purple - and the off-shades
-  # (orange, crimson, teal, light green) only appear once a variable has more
-  # than six levels. A two- or three-level factor should not be drawn in two
-  # shades of amber.
+  # only appear once a variable has more than six levels. A two- or
+  # three-level factor should not be drawn in two shades of amber.
+  #
+  # The off-shades are themselves ordered so that each one sits as far as
+  # possible from the strong hue it resembles: teal first (nothing before it
+  # is close), then crimson (6 places after red), light green (6 after green)
+  # and orange last (6 after yellow). At eight levels the palette therefore
+  # reads blue/red/green/yellow/black/purple/teal/crimson rather than pairing
+  # yellow with orange in the same legend.
   hat = c("#4e54ac", "#e8351e", "#17a769", "#efb306", "#000000", "#852f88",
-          "#eb990c", "#cd023d", "#0f8096", "#7db954"),
+          "#0f8096", "#cd023d", "#7db954", "#eb990c"),
   reading = c("#EFBC68", "#919F89", "#EDBDAE", "#57717C",
               "#5F97A4", "#CAEAC8", "#95A1AE", "#C8CFD6"),
   heatmap0 = c("#001219", "#005F73", "#0A9396", "#94D2BD", "#E9D8A6",
@@ -166,7 +172,7 @@ utils::globalVariables(c("ID", "ID2", "Name", "S/N", "Report", "Compound"))
   lv = sort(unique(x[!is.na(x) & x != "NA"]))
   m  = if(length(lv) == 0)      character(0)
        else if(length(lv) == 2) stats::setNames(
-                                  .mrm_palette()[1:2], lv)
+                                  .mrm_palette()[c(1L, 2L)], lv)
        else                     stats::setNames(.qual_pal(length(lv)), lv)
   if(any(is.na(x) | x == "NA")) m = c(m, "NA" = "grey70")
   m

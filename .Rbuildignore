@@ -9,3 +9,6 @@
 ^doc$
 ^Meta$
 ^data-raw$
+^docs$
+^pkgdown$
+^_pkgdown\.yml$

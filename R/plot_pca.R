@@ -61,7 +61,7 @@ plot_pca = function(pca, sample_meta, colour_by,
   smeta = as.data.frame(sample_meta)
 
   x = pca$pr$x
-  pc = as.integer(components)[1:2]
+  pc = as.integer(components)[c(1L, 2L)]
   if(any(pc > ncol(x)))
     stop(sprintf("[plot_pca] requested component %d but the fit has %d.",
                  max(pc), ncol(x)))

@@ -147,17 +147,24 @@ run_pca = function(X,
   if(center) steps = c(steps, "Mean-centred per feature.")
   if(scale)  steps = c(steps, "Autoscaled (divide by per-feature SD).")
 
-  pr = if(ncol(X) >= 2 && nrow(X) >= 3){
-    tryCatch(stats::prcomp(X, center = center, scale. = scale),
-             error = function(e){
-               steps <<- c(steps, sprintf("prcomp() failed: %s.",
-                                          conditionMessage(e)))
-               NULL
-             })
+  # The handler returns the condition rather than writing to `steps` from
+  # inside it: prcomp() cannot itself return something inheriting from
+  # "error", so testing the result is unambiguous, and the audit trail is
+  # then appended in the frame that owns it.
+  if(ncol(X) >= 2 && nrow(X) >= 3){
+    fit = tryCatch(stats::prcomp(X, center = center, scale. = scale),
+                   error = function(e) e)
+    if(inherits(fit, "error")){
+      steps = c(steps, sprintf("prcomp() failed: %s.",
+                               conditionMessage(fit)))
+      pr = NULL
+    } else {
+      pr = fit
+    }
   } else {
     steps = c(steps, sprintf("Insufficient data: n_samples=%d, n_features=%d.",
                              nrow(X), ncol(X)))
-    NULL
+    pr = NULL
   }
 
   list(pr = pr, X_clean = X,

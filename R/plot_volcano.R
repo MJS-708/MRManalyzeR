@@ -89,7 +89,10 @@ plot_volcano = function(stats, comparison = NULL, pair = NULL,
                                        color = .data$sig,
                                        text = .data$tooltip)) +
     ggplot2::geom_point(alpha = 0.7, size = 2) +
-    ggplot2::scale_color_manual(values = c(sig = "#d62728", ns = "grey60")) +
+    # Significant points take the palette's red rather than a private hex, so
+    # the volcano matches every other figure in the suite.
+    ggplot2::scale_color_manual(
+      values = c(sig = .mrm_palette()[2], ns = "grey60")) +
     ggplot2::geom_hline(yintercept = -log10(sig_threshold),
                         linetype = "dashed", color = "grey40") +
     ggplot2::geom_vline(xintercept = 0, linetype = "dashed",

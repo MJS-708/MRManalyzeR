@@ -296,7 +296,10 @@ interactive_plots = isTRUE(report_pars$interactive_plots %||% TRUE) &&
 }
 
 # plot_boxplot() draws one type at a time; the report shows one or both.
-.compound_plots = function(de_plot, compound, group_by, facet_by, fill_brewer){
+# Every box/bar in the report takes the package qualitative palette, so a
+# group keeps the same colour whether it is drawn here, in a heatmap
+# annotation or on the PCA.
+.compound_plots = function(de_plot, compound, group_by, facet_by){
   types = if(plot_type == "both") c("box", "bar") else plot_type
   out = lapply(types, function(ty)
     plot_boxplot(de_plot, compound, group_by, facet_by = facet_by,
@@ -306,8 +309,7 @@ interactive_plots = isTRUE(report_pars$interactive_plots %||% TRUE) &&
                  sample_id_head = sample_id_head,
                  tooltip_factor = global_summary_factor,
                  yaxis_quant    = yaxis_quant,
-                 yaxis_scalar   = yaxis_scalar,
-                 fill_brewer    = fill_brewer))
+                 yaxis_scalar   = yaxis_scalar))
   stats::setNames(out, types)
 }
 ```
@@ -323,7 +325,8 @@ heatmap) inspection per comparison.
 > ends with `_stats.xlsx`) saved alongside this HTML report. Open it in
 > Excel to filter / sort the full tables.** This report shows only the
 > visualisations and the volcano significant-feature shortlist; the
-> long-form tables are intentionally not duplicated here.
+> long-form tables are intentionally not duplicated here. The workbook's
+> first sheet, `key`, defines every column heading it contains.
 
 **Missing-value policy** (which sections impute and which don't):
 
@@ -555,7 +558,7 @@ for(i in seq_along(detected_compounds)){
   compound = detected_compounds[i]
   cid      = detected_ids[i]
   plots = .compound_plots(.long_de, compound, ".group",
-                          facet_by = ".comparison", fill_brewer = FALSE)
+                          facet_by = ".comparison")
 
   # Show alphabetically-first detected compound by default (matches dropdown)
   display = if(detected_ids[i] == detected_ids_alpha[1]) "block" else "none"
@@ -669,7 +672,7 @@ function showFactorBoxplot_%s(id){
     compound = detected_fb[i]
     cid      = detected_ids_fb[i]
     plots = .compound_plots(.tab_de, compound, ".group",
-                            facet_by = NULL, fill_brewer = TRUE)
+                            facet_by = NULL)
 
     # Show alphabetically-first compound by default (matches dropdown)
     display = if(detected_ids_fb[i] == detected_ids_alpha_fb[1]) "block" else "none"
@@ -1506,8 +1509,7 @@ for(ratio_cfg in ion_ratios_list){
                        value_label    = "ratio",
                        sample_id_head = sample_id_head,
                        yaxis_quant    = yaxis_quant,
-                       yaxis_scalar   = yaxis_scalar,
-                       fill_brewer    = FALSE) +
+                       yaxis_scalar   = yaxis_scalar) +
             ggplot2::labs(title = ratio_lbl) +
             ggplot2::geom_text(data = anno_ir,
                                ggplot2::aes(x = .group, label = label),
@@ -1569,8 +1571,7 @@ for(ratio_cfg in ion_ratios_list){
                        sample_id_head = sample_id_head,
                        tooltip_factor = global_summary_factor,
                        yaxis_quant    = yaxis_quant,
-                       yaxis_scalar   = yaxis_scalar,
-                       fill_brewer    = TRUE) +
+                       yaxis_scalar   = yaxis_scalar) +
             ggplot2::labs(title = sprintf("%s — by %s", ratio_lbl, f)))
       names(plots_f) = if(plot_type == "both") c("box", "bar") else plot_type
       for(pname in names(plots_f)){

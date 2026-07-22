@@ -10,13 +10,17 @@ project: &general
     project_dir: &project_dir 'C:/Users/matsmi/OneDrive - Karolinska Institutet/Dokument/Bioinformatics/MRManalyzeR'
     data_dir:    &data_dir    !concat_path [*project_dir, 'inst/extdata']
     result_dir:  &result_dir  !concat_path [*project_dir, 'temp_res']
-    fn:          &fn example_data   # input/output .xlsx name (in data_dir)
-    datatype:    "ng/mL"            # value label; or a list to loop, e.g. ["Area", "Response"]
+    fn:          &fn example_data   # input .xlsx name (in data_dir), and the stem of every
+                                    # output; with execute: False it must match the stored .RDS
     suffix: _                       # appended to output filenames
+                                    # (datatype lives with the data source it applies to)
 
   # ==================== PEAK MATRIX PROCESSING ====================
   PeakMatrixProcessing:
-    execute: True                  # False = skip, reuse existing RDS
+    execute: True                  # False = skip processing and load the stored dataset:
+                                   #   <result_dir>/<fn>_<datatype><suffix>.RDS
+                                   # so fn, datatype and suffix must match that file.
+                                   # If they don't, the error lists the .RDS files found.
 
     # 1. Sample metadata columns
     name_col: Name                        # sample id (matches injection / matrix rows)
@@ -31,18 +35,27 @@ project: &general
     comment_col: Comment                  # exclusion-reason column
 
     # 3. Data source  (enable EXACTLY ONE)
+    #    The enabled block names the reported value, which tags every output
+    #    filename: datatype: for tl_data / matrix_data, signal_filter: for
+    #    skyline_data (a Skyline export has no units tag, so the LOD / LOQ
+    #    floor is what separates one run from another). Either may be a list,
+    #    which loops the whole workflow once per entry.
     skyline_data:
       enabled: False
       data_tab_names: [skyline_data]      # molecule x sample sheet(s)
-      signal_filter: LOD                  # LOD | LOQ | False
+      signal_filter: ["LOD"]              # LOD | LOQ | False - also the output label;
+                                          # a list loops, e.g. ["LOD", "LOQ"]
     tl_data:
       enabled: True
       data_tab_names: [lcms_data]         # TargetLynx sheet(s); omit to auto-match 'lcms_data*'
       tl_headers: ["ID", "Name","Area", "ng/mL", "Response",  "S/N"]
+      datatype: ["ng/mL"]                 # TargetLynx units tag; one of tl_headers -
+                                          # a list loops, e.g. ["Area", "Response"]
       snr: 3                              # S/N threshold | False
     matrix_data:                          # vendor-neutral: any sample x analyte table
       enabled: False
       data_tab_names: [matrix_data]       # sheet(s) holding the matrix
+      datatype: ["Area"]                  # output label (the matrix is already one value)
       id_col: ~                           # ~ = first column holds sample names
       orientation: samples_rows           # samples_rows | samples_cols
       signal_filter: False                # LOD | LOQ | False (needs the column in feature_metadata)
@@ -89,7 +102,7 @@ project: &general
     colours:
       qualitative: hat                    # hat | reading | heatmap0 - group / class colours
                                           # hat order: blue, red, green, yellow, black,
-                                          # purple, then orange, crimson, teal, light green
+                                          # purple, teal, crimson, light green, orange
       diverging:   heatmap2               # heatmap2 | heatmap0 - z-scores and correlations
 
     # -- general figure pars--
@@ -104,6 +117,8 @@ project: &general
     sample_labels: ["Sample"]             # biological value(s) = CV_sample
     injection_order_head: Injection_order # drift-plot x-axis; drives QC-PCA numeric colour scale
     sample_id_head: Sample_ID             # per-sample id for hover / labels
+    # intensity_plot_levels: [QC, Sample] # which sample types appear in the drift / Q-Q
+                                          # plots; default = qc_label + sample_labels
 
     # -- intensity vs injection order (drift) --
     plot_intensity_per_compound: True
@@ -136,7 +151,7 @@ project: &general
     colours:
       qualitative: hat                    # hat | reading | heatmap0 - group / class colours
                                           # hat order: blue, red, green, yellow, black,
-                                          # purple, then orange, crimson, teal, light green
+                                          # purple, teal, crimson, light green, orange
       diverging:   heatmap2               # heatmap2 | heatmap0 - z-scores and correlations
 
     # -- general figure pars--
@@ -149,6 +164,8 @@ project: &general
     sample_type_head: Sample_type         # row-classifier column
     sample_labels: ["Sample"]             # biological value(s)
     sample_id_head: Sample_ID             # per-sample id for hover / heatmap rows
+    # biological_filter drops blanks / QCs from the global summary and global PCA.
+    # Defaults to sample_type_head in sample_labels; `biological_filter: {head: ~}` disables it.
 
     # -- analysis-wide --
     global_summary_factor: "Treatment"    # Primary study factor
@@ -181,6 +198,7 @@ project: &general
       display: tabs                       # combined | tabs
       plot_type: both                     # box | bar | both
       error_bar: SD                       # SD | SE | none
+      # levels: ["Sample"]                # rows included; default = sample_labels
 
     # -- PCA per comparison --
     pca:
@@ -265,6 +283,7 @@ project: &general
             - { }                        # all samples
           cluster: True                  # cluster within pathway group
           show_values: False             # numbers in cells (busy >30 feat)
+          include_self: False            # include feature-vs-self (diagonal)
 
     # -- linear models  (feature ~ formula; one row per coefficient) --
     linear_models:

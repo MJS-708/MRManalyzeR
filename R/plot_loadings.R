@@ -38,7 +38,7 @@ plot_loadings = function(pca, variable_meta, components = c(1, 2),
   vmeta = as.data.frame(variable_meta)
 
   pr = pca$pr
-  pc = as.integer(components)[1:2]
+  pc = as.integer(components)[c(1L, 2L)]
   if(any(pc > ncol(pr$x))) pc = c(1L, min(2L, ncol(pr$x)))
   pc_labs = sprintf("PC%d", pc)
 
