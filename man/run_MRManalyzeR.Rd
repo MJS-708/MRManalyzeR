@@ -11,7 +11,7 @@ run_MRManalyzeR(path_yaml)
 }
 \value{
 Invisibly, a list with the `DatasetExperiment`, `removed_features`,
-  `stats_tables`, and the resolved output paths. When `paths.datatype` is a
+  `stats_tables`, and the resolved output paths. When `datatype` is a
   vector (e.g. `["Area", "Response", "Conc"]`), the function loops over each
   datatype and returns a list of per-datatype results.
 }
@@ -40,13 +40,21 @@ biological samples, so biological spread plus that technical noise), and
 samples than between replicate injections of identical material. `CV_QC` is
 `NA` when a run contains no QC injections.
 
-Output filenames are derived from `paths.fn` + `paths.datatype` +
-`paths.suffix`, so when `PeakMatrixProcessing.execute: False` the code
-can still locate the existing RDS without re-reading the source xlsx.
+Output filenames are derived from `paths.fn` + `datatype` +
+`paths.suffix`, so when `PeakMatrixProcessing.execute: False` the code can
+still locate the existing RDS without re-reading the source xlsx. Those
+three must therefore match the stored file; if they do not, the error
+lists the `.RDS` files that are in `paths.result_dir`.
+
+`datatype` is read from the enabled data-source block: `datatype:` under
+`tl_data:` / `matrix_data:`, and `signal_filter:` under `skyline_data:`,
+where the LOD / LOQ floor is what distinguishes one run from another. Any
+of them may be a list, in which case the whole workflow runs once per entry.
 
 Backwards compatibility:
 \itemize{
-  \item `paths.datatype` falls back to `PeakMatrixProcessing.datatype` if absent.
+  \item `datatype` falls back to `PeakMatrixProcessing:` and then `paths:`,
+    where earlier configs put it. Setting it in two places warns.
   \item Legacy `UVA_report:` / `MVA_report:` blocks are recognised when
     `data_quality_report:` / `stats_report:` are missing.
 }

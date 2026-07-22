@@ -97,10 +97,21 @@ validate_input = function(feature_meta, sample_meta, data = NULL,
     length(miss) == 0
   }
 
-  ok_f = need(fm, c(compound_col, processing_name_col, report_col),
+  ok_f = need(fm, c(compound_col, processing_name_col),
               "feature_metadata", "feature_metadata columns")
   ok_s = need(sm, c(name_col, include_col), "sample_metadata",
               "sample_metadata columns")
+
+  # The report filter is optional: an externally curated feature table carries
+  # no exclusion column, and every feature is then reported. Worth a warning
+  # rather than silence, because the other way this happens is a typo in
+  # report_col, and that would quietly reinstate features meant to be dropped.
+  has_report = report_col %in% colnames(fm)
+  if(!has_report)
+    .chk_add(chk, "feature report filter", "warning", sprintf(
+      "feature_metadata has no '%s' column, so all %d features will be reported. Set report_col to an existing column if some should be excluded.",
+      report_col, nrow(fm)))
+  else .chk_add(chk, "feature report filter", "ok")
 
   # --- identifiers must be unique ------------------------------------------
   if(ok_s){
@@ -120,8 +131,10 @@ validate_input = function(feature_meta, sample_meta, data = NULL,
   }
 
   if(ok_f){
+    reported = if(has_report) as.character(fm[[report_col]]) == "YES"
+               else           rep(TRUE, nrow(fm))
     for(cl in unique(c(compound_col, processing_name_col))){
-      v   = as.character(fm[[cl]])[as.character(fm[[report_col]]) == "YES"]
+      v   = as.character(fm[[cl]])[reported]
       dup = unique(v[duplicated(v)])
       if(length(dup))
         .chk_add(chk, sprintf("unique %s", cl), "error", sprintf(

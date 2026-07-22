@@ -28,7 +28,7 @@ Outputs:
 \itemize{
   \item `<output_stub>.RDS`        - merged `DatasetExperiment`
   \item `<output_stub>.xlsx`       - feature_metadata / sample_metadata / matrix tabs
-  \item `<output_stub>_stats.xlsx` - stats / correlations / linear_models
+  \item `<output_stub>_stats.xlsx` - key / stats / correlations / linear_models
   \item `<output_stub>_stats_report.html`
 }
 

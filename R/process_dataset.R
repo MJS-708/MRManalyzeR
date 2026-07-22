@@ -88,7 +88,9 @@
 #'   `"Processing_name"`.
 #' @param report_col,report_value `feature_metadata` inclusion filter: features
 #'   where `fdata[[report_col]] == report_value` are reported. Defaults
-#'   `"Report"` / `"YES"`.
+#'   `"Report"` / `"YES"`. Optional - when `report_col` is not a column of
+#'   `fdata` every feature is reported, which is the normal case for a feature
+#'   table curated outside a TargetLynx workflow.
 #' @param comment_col `feature_metadata` column used to record why a feature
 #'   was excluded. Default `"Comment"`.
 #' @return A named list with `dataset` (the `DatasetExperiment`) and
@@ -149,7 +151,7 @@ process_dataset = function(fdata,
     if(!.c %in% colnames(metadata))
       stop(sprintf("[process_dataset] sample_metadata has no '%s' column.", .c))
   }
-  for(.c in c(compound_col, processing_name_col, report_col)){
+  for(.c in c(compound_col, processing_name_col)){
     if(!.c %in% colnames(fdata))
       stop(sprintf("[process_dataset] feature_metadata has no '%s' column.", .c))
   }
@@ -160,8 +162,21 @@ process_dataset = function(fdata,
   # regardless of what the input sheet calls them.
   fdata$Processing_name = fdata[[processing_name_col]]
   fdata$Compound        = fdata[[compound_col]]
-  fdata$Report          = ifelse(as.character(fdata[[report_col]]) ==
-                                   as.character(report_value), "YES", "NO")
+
+  # Report is an inclusion filter, not measured data. A feature table curated
+  # outside a TargetLynx workflow - the usual case for data_source = "matrix" -
+  # carries no such column, and the only reading of "no exclusion information"
+  # is that every feature is reported. Said out loud rather than assumed.
+  fdata$Report = if(report_col %in% colnames(fdata)){
+    ifelse(as.character(fdata[[report_col]]) == as.character(report_value),
+           "YES", "NO")
+  } else {
+    message(sprintf(
+      "[process_dataset] feature_metadata has no '%s' column; reporting all %d features.",
+      report_col, nrow(fdata)))
+    rep("YES", nrow(fdata))
+  }
+
   if(comment_col %in% colnames(fdata)) fdata$Comment = fdata[[comment_col]]
 
   if(!data_source %in% c("targetlynx", "skyline", "matrix"))

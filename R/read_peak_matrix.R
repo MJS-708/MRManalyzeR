@@ -22,8 +22,11 @@
 #' @param data_tab_names Sheet name(s) to read when `x` is a path. Multiple
 #'   sheets are row-bound, so an acquisition split across sheets can be given
 #'   as a vector; sample identifiers must be unique across all of them.
-#' @param id_col Column holding the sample identifiers. `NULL` uses the first
-#'   column.
+#' @param id_col The label column - the one holding identifiers rather than
+#'   measurements. It is dropped from the numeric matrix and used as row names.
+#'   `NULL` uses the first column. What it identifies follows `orientation`:
+#'   sample names under `"samples_rows"`, compound names under
+#'   `"samples_cols"`, with the other axis coming from the header row.
 #' @param orientation `"samples_rows"` (default: one row per sample) or
 #'   `"samples_cols"` (one row per analyte, transposed on read).
 #' @return A data frame, rows = samples, columns = compounds, numeric - the

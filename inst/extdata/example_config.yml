@@ -32,9 +32,12 @@ project: &general
     feature_meta_tab: feature_metadata    # sheet holding one row per compound
     compound_col: Compound                # feature id
     processing_name_col: Processing_name  # raw feature name (joins to source)
-    report_col: Report                    # feature include-filter column
+    report_col: Report                    # feature include-filter column. Optional: if the
+                                          # column is absent every feature is reported (with a
+                                          # warning), which is normal for a feature table
+                                          # curated outside a TargetLynx workflow.
     report_value: "YES"                   # value marking features to report
-    comment_col: Comment                  # exclusion-reason column
+    comment_col: Comment                  # exclusion-reason column (optional)
 
     # 3. Data source  (enable EXACTLY ONE)
     #    The enabled block names the reported value, which tags every output
@@ -58,7 +61,9 @@ project: &general
       enabled: False
       data_tab_names: [matrix_data]       # sheet(s) holding the matrix
       datatype: ["Area"]                  # output label (the matrix is already one value)
-      id_col: ~                           # ~ = first column holds sample names
+      id_col: ~                           # label column (not a measurement); ~ = first column.
+                                          # samples_rows -> holds sample names; samples_cols ->
+                                          # holds compound names. The other axis is the header row.
       orientation: samples_rows           # samples_rows | samples_cols
       signal_filter: False                # LOD | LOQ | False (needs the column in feature_metadata)
 

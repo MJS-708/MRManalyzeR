@@ -21,6 +21,7 @@ Invisibly, the path written.
 \description{
 Adds (or overwrites) the following tabs in the existing results xlsx:
 \itemize{
+  \item `key`           - what every column heading in this workbook means.
   \item `stats`         - long table of comparisons + post-hoc.
   \item `correlations`  - long table of feature x feature correlations.
   \item `linear_models` - long table of `lm()` coefficients.
