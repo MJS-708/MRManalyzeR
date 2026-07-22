@@ -1,0 +1,18 @@
+# Runs the same build and check that Bioconductor's R-universe instance runs,
+# on this repository rather than BiocStaging. Lets a Linux / macOS failure be
+# found and fixed here, instead of spending a submission build cycle on it.
+#
+# From https://docs.r-universe.dev/bioconductor/#debugging-the-ci
+name: Test R-universe
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    name: R-universe testing
+    uses: r-universe-org/workflows/.github/workflows/build.yml@v3
+    with:
+      universe: bioc
+      organization: bioconductor # for BiocCheck checks
