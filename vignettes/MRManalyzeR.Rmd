@@ -48,11 +48,65 @@ modelling framework. Everything is driven from a curated `.xlsx` workbook and a
 single YAML file, so a run is reproducible and the workflow stays accessible to
 analysts who do not write R.
 
-The package reads Waters **TargetLynx** exports (the primary format) and
-**Skyline** exports, and covers signal filtering, blank filtering,
-normalisation, concentration adjustment, missing-value imputation and batch
-correction, followed by quality control, statistics and two self-contained HTML
-reports.
+The package reads Waters **TargetLynx** exports (the primary format),
+**Skyline** exports, and plain sample-by-analyte matrices from any other
+software, and covers signal filtering, blank filtering, normalisation,
+concentration adjustment, missing-value imputation and batch correction,
+followed by quality control, statistics and two self-contained HTML reports.
+
+## Scope, and where this sits among related packages
+
+MRManalyzeR begins with **reviewed vendor result tables**. It does not perform
+chromatographic peak detection, peak integration or calibration-curve fitting
+from raw mass-spectrometry data; those judgements stay in TargetLynx or
+Skyline, where the chromatograms are.
+
+That is the line which separates it from the Bioconductor packages nearest to
+it, and from the existing targeted-MRM tools:
+
+| Task | Tool |
+|---|---|
+| Raw untargeted LC-MS feature detection and alignment | `xcms` |
+| General metabolomics peak-matrix preprocessing | `pmp` |
+| Metabolite annotation-table workflows | `MetMashR` |
+| Chromatogram processing, peak integration, automated identification | MRMAnalyzer, MRMkit, MRMQuant |
+| Post-acquisition targeted-assay processing, QC and reporting | **MRManalyzeR** |
+
+The design assumes a validated targeted panel: roughly 30 MRM transitions
+upward, known compounds carrying class or pathway annotation, authentic
+standards, and an experiment designed to test a hypothesis rather than to
+discover features. Feature metadata is treated as biology, not bookkeeping --
+compound class and enzymatic pathway group and colour the heatmap annotations,
+PCA loadings and correlation blocks throughout.
+
+## Assumptions and limitations
+
+Worth knowing before you rely on the output.
+
+* **Quantification is internal-standard based.** MRManalyzeR deliberately
+  provides conservative normalisation and batch-adjustment methods suited to
+  validated targeted assays, where an isotope-labelled standard has already
+  absorbed most of the run-order and matrix variation. More extensive
+  signal-drift modelling -- QC-RSC spline correction and similar -- remains
+  available through complementary packages such as `pmp`, and is the right
+  choice when the assay does not carry standards of that kind.
+* **Batch correction equalises batch medians.** It assumes the reference
+  samples (`QC`, or biological samples if the design is balanced across
+  batches) are comparable between batches. `correct_batch()` refuses to run
+  without enough reference injections per batch, and warns when the batch
+  variable is confounded with a study factor -- but it cannot detect a design
+  where that confounding is total.
+* **Concentration adjustment rescales vendor-reported values.** It applies the
+  internal-standard concentration ratio and the sample-volume correction; it
+  does not fit or refit a calibration curve.
+* **Imputation is a fixed fraction of each compound's observed minimum.** That
+  is a convention, not an estimate. Values below the detection limit and
+  values missing for other reasons are not currently distinguished.
+* **Statistical methods are chosen by you, per comparison.** Nothing is
+  selected automatically from the data, and no test is run in parallel with
+  another so that the more convenient answer can be picked afterwards.
+* **Multiple-testing correction is applied within a family**, never across the
+  whole workbook -- see the `adjust_family` column of the stats output.
 
 ## How the package is organised
 

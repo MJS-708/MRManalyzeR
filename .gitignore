@@ -61,3 +61,6 @@ inst/doc
 MRManalyzeR.BiocCheck/
 /doc/
 /Meta/
+
+# RStudio project file - kept local, not part of the package
+*.Rproj
