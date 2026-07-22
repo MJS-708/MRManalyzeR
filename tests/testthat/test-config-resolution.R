@@ -87,6 +87,22 @@ test_that(".narrow_datatype() pins the enabled block to one value", {
   expect_equal(.narrow_datatype(pmp, "Area")$matrix_data$datatype, "Area")
 })
 
+test_that(".read_sheet() names the key and the sheets actually present", {
+  skip_if_not_installed("openxlsx")
+
+  tmp = tempfile(fileext = ".xlsx")
+  on.exit(unlink(tmp), add = TRUE)
+  openxlsx::write.xlsx(list(samples = data.frame(Name = "S1")), tmp)
+
+  expect_equal(.read_sheet(tmp, "samples", "sample_meta_tab")$Name, "S1")
+
+  # A misconfigured sheet name is the most likely failure now that it is
+  # configurable, so the error has to name the key and list the alternatives.
+  err = expect_error(.read_sheet(tmp, "sample_metadata", "sample_meta_tab"))
+  expect_match(conditionMessage(err), "sample_meta_tab")
+  expect_match(conditionMessage(err), "samples")
+})
+
 test_that(".narrow_datatype() leaves a disabled signal filter off", {
   # The datatype came from elsewhere; writing it into signal_filter would
   # switch on a floor the config deliberately declined.

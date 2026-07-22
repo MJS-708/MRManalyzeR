@@ -23,11 +23,13 @@ project: &general
                                    # If they don't, the error lists the .RDS files found.
 
     # 1. Sample metadata columns
+    sample_meta_tab: sample_metadata      # sheet holding one row per injection
     name_col: Name                        # sample id (matches injection / matrix rows)
     include_col: Include                  # sample include-filter column
     include_value: "YES"                  # value marking rows to process
 
     # 2. Feature metadata columns
+    feature_meta_tab: feature_metadata    # sheet holding one row per compound
     compound_col: Compound                # feature id
     processing_name_col: Processing_name  # raw feature name (joins to source)
     report_col: Report                    # feature include-filter column

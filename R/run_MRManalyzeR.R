@@ -215,6 +215,29 @@ run_MRManalyzeR = function(path_yaml){
   pmp_params
 }
 
+#' Read one named sheet, naming the config key when it is not there
+#'
+#' `openxlsx::read.xlsx()` fails with "Cannot find sheet named ..." and leaves
+#' the reader to work out which setting produced the name. Since the sheet is
+#' now configurable, the error has to say which key to change and what the
+#' workbook actually holds.
+#'
+#' @param xlsx_path Workbook path.
+#' @param sheet Sheet name.
+#' @param key The YAML key that supplied `sheet`, for the error message.
+#' @return A data frame.
+#' @keywords internal
+#' @noRd
+.read_sheet = function(xlsx_path, sheet, key){
+  present = openxlsx::getSheetNames(xlsx_path)
+  if(!sheet %in% present)
+    stop(sprintf(
+      "[run_MRManalyzeR] no sheet '%s' in %s.\nSheets present: %s.\nSet PeakMatrixProcessing.%s to one of these.",
+      sheet, basename(xlsx_path), paste(present, collapse = ", "), key),
+      call. = FALSE)
+  openxlsx::read.xlsx(xlsx_path, sheet = sheet)
+}
+
 #' Single-datatype runner extracted from [`run_MRManalyzeR()`].
 #' @keywords internal
 #' @noRd
@@ -341,9 +364,10 @@ run_MRManalyzeR = function(path_yaml){
 
   # Sample-metadata contract columns (overridable for studies that name them
   # differently). name_col matches LC-MS injection / data-matrix row names.
-  name_col      = pmp_params$name_col      %||% "Name"
-  include_col   = pmp_params$include_col   %||% "Include"
-  include_value = pmp_params$include_value %||% "YES"
+  name_col       = pmp_params$name_col        %||% "Name"
+  include_col    = pmp_params$include_col     %||% "Include"
+  include_value  = pmp_params$include_value   %||% "YES"
+  sample_meta_tab = pmp_params$sample_meta_tab %||% "sample_metadata"
 
   # feature_metadata contract columns (canonicalised internally to
   # Compound / Processing_name / Report / Comment).
@@ -352,11 +376,12 @@ run_MRManalyzeR = function(path_yaml){
   report_col          = pmp_params$report_col          %||% "Report"
   report_value        = pmp_params$report_value        %||% "YES"
   comment_col         = pmp_params$comment_col         %||% "Comment"
+  feature_meta_tab    = pmp_params$feature_meta_tab    %||% "feature_metadata"
 
   # Path-based reads avoid an openxlsx::loadWorkbook() bug on workbooks
   # with certain styling/drawing XML, and are also faster.
-  fdata    = openxlsx::read.xlsx(xlsx_path, sheet = "feature_metadata")
-  metadata = openxlsx::read.xlsx(xlsx_path, sheet = "sample_metadata")
+  fdata    = .read_sheet(xlsx_path, feature_meta_tab, "feature_meta_tab")
+  metadata = .read_sheet(xlsx_path, sample_meta_tab,  "sample_meta_tab")
 
   # Check the workbook before anything reads it. Every problem is reported at
   # once: a duplicated sample name and a text value in a measurement column
