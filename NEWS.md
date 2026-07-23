@@ -1,3 +1,19 @@
+# MRManalyzeR 0.99.1
+
+* Vignette and README reworked following review: repositioned around flexible
+  quantitative outputs (raw areas through to calibrated concentrations) rather
+  than internal-standard quantification alone, and around defined target lists
+  rather than hypothesis testing alone.
+* Vignette retitled, and validation promoted to its own stage in the workflow
+  table and diagram.
+* Corrected the description of `run_stats()`: the test is named explicitly per
+  comparison, not inferred from the design.
+* Blanks are now excluded from the PCA examples, and the imputation fraction
+  lowered to 0.2.
+* "Ion ratios" renamed to "metabolite ratios" to avoid confusion with
+  qualifier/quantifier transition ratios.
+* Added Antonio Checa as an author, and a package logo.
+
 # MRManalyzeR 0.99.0
 
 * Initial Bioconductor submission.

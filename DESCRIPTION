@@ -1,11 +1,15 @@
 Package: MRManalyzeR
 Type: Package
 Title: Process and Analyse Targeted LC-MS Lipidomics and Metabolomics Data
-Version: 0.99.0
-Authors@R: person("Matthew J.", "Smith",
-                  email = "mattyjsmith123@gmail.com",
-                  role = c("aut", "cre"),
-                  comment = c(ORCID = "0000-0002-7357-2670"))
+Version: 0.99.1
+Authors@R: c(
+    person("Matthew J.", "Smith",
+           email = "mattyjsmith123@gmail.com",
+           role = c("aut", "cre"),
+           comment = c(ORCID = "0000-0002-7357-2670")),
+    person("Antonio", "Checa",
+           role = "aut",
+           comment = c(ORCID = "0000-0002-0674-3329")))
 Description: Reproducible post-acquisition processing of targeted LC-MS/MS
     lipidomics and metabolomics results exported from Waters TargetLynx or
     from Skyline, or supplied as a plain sample-by-analyte matrix. Reads the

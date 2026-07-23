@@ -5,8 +5,10 @@
 CLAUDE.md
 .claude/
 
-# Scratch figures (logo / workflow drafts) — keep local only
-man/figures/
+# Scratch figures (workflow drafts) — keep local only. The logo is tracked:
+# it ships in the tarball and the README points at it.
+man/figures/*
+!man/figures/logo.png
 
 # Session Data files
 .RData
