@@ -1,33 +1,34 @@
-# MRManalyzeR
+# MRManalyzeR <img src="man/figures/logo.png" align="right" height="139" alt="" />
 
 Reproducible post-acquisition processing of targeted LC-MS/MS metabolomics
-and lipidomics results exported from Waters TargetLynx or Skyline. It reads
-the quantitative result tables, integrates them with sample and feature
-metadata, applies configurable quality-control and matrix-processing steps,
-and returns an analysis-ready `struct::DatasetExperiment` together with
-self-contained data-quality and statistical reports.
+results exported from Waters TargetLynx, Skyline and plain matrix formats
+(extendable to other vendors). It reads the quantitative result tables,
+integrates them with sample and feature metadata, applies configurable
+quality-control and matrix-processing steps, and returns an analysis-ready
+`struct::DatasetExperiment` together with self-contained data-quality and
+statistical reports.
 
 Each processing and analysis step is available as an exported R function
 operating on that object. Complete workflows can additionally be run from a
 single YAML configuration, without writing a driver script.
 
-MRManalyzeR starts where the vendor software finishes. It does **not** perform
+MRManalyzeR takes vendor software outputs. It does **not** perform
 chromatographic peak detection, peak integration or calibration-curve fitting
 from raw mass-spectrometry data.
 
 ## Scope
 
-Built for **targeted quantitative assays** — methods of roughly 30 MRM
-transitions upward, where the analytes are known compounds carrying pathway
-or class annotation, and the experiment is designed to test a hypothesis
-rather than to discover features.
+Built for **targeted quantitative assays** — methods of roughly >20 MRM
+transitions, where the analytes are known compounds carrying pathway or class
+annotation, and the experiment is structured around defined target lists,
+whether testing a specific hypothesis or conducting targeted exploratory
+profiling.
 
 Two consequences follow, and they are deliberate:
 
-* **Quantification is internal-standard based.** Normalisation and batch
-  correction are therefore intentionally limited — an IS-corrected targeted
-  panel does not need, and can be harmed by, the aggressive signal-drift
-  modelling that untargeted workflows rely on.
+* **Reported values are commonly internal-standard normalised.** Normalisation
+  and batch correction are therefore intentionally limited. Signal-drift
+  modelling is available in untargeted metabolomics tools.
 * **Feature metadata carries biology.** Compound class and enzymatic pathway
   are first-class: they group and colour heatmap annotations, PCA loadings
   and correlation blocks throughout.

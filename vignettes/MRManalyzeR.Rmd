@@ -1,9 +1,11 @@
 ---
-title: "Processing targeted LC-MS/MS lipidomics and metabolomics with MRManalyzeR"
+title: "MRManalyzeR: Reproducible QC and stats reporting for targeted metabolomics"
 author:
 - name: Matthew J. Smith
   affiliation: Karolinska Institutet, Stockholm, Sweden
   email: mattyjsmith123@gmail.com
+- name: Antonio Checa
+  affiliation: Karolinska Institutet, Stockholm, Sweden
 date: "`r Sys.Date()`"
 package: MRManalyzeR
 output:
@@ -11,7 +13,7 @@ output:
     toc_float: true
     number_sections: true
 vignette: >
-  %\VignetteIndexEntry{Processing targeted LC-MS/MS lipidomics and metabolomics with MRManalyzeR}
+  %\VignetteIndexEntry{MRManalyzeR: Reproducible QC and stats reporting for targeted metabolomics}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -31,24 +33,36 @@ dt <- function(x, rownames = TRUE, page = 5){
 
 # Introduction
 
-Targeted LC-MS/MS is analytically less complex than untargeted profiling. The
-compound panel is defined in advance, every analyte has an authentic standard,
-and the questions that remain are about **data quality** and the **accurate
-reporting of known metabolites** rather than about feature discovery.
-Normalisation to stable-isotope internal standards is commonplace, and reported
-values are true concentrations only once they have been adjusted for the
-internal-standard concentration each vial actually carried and for the volume
-of sample the extract came from.
+Targeted LC-MS/MS data processing is less complex than untargeted profiling,
+though the assumptions differ. In untargeted profiling the analytical hurdle
+comes after acquisition; deconvolution, identifying unknowns, and the
+bioinformatics that follows. Targeted LC-MS/MS has the complexity upfront: the
+compound panel is defined in advance, so what remains afterwards are questions
+of **data quality** and the **accurate reporting of known metabolites** rather
+than of feature discovery. Normalisation to stable-isotope internal standards is
+commonplace, and researchers may report raw peak areas, internal-standard
+adjusted relative ratios, or absolute concentrations depending on the study
+design or quantitative goals.
 
-MRManalyzeR is built around exactly that: assessing data quality on the way to
-accurate quantification, and giving a basic interpretation of the analytes that
-come out. The output is deliberately visual -- quality control and statistics
-are presented as plots with simple statistical summaries beside them, not as a
-modelling framework. Everything is driven from a curated `.xlsx` workbook and a
-single YAML file, so a run is reproducible and the workflow stays accessible to
-analysts who do not write R.
+MRManalyzeR is built specifically for targeted metabolomics data, focused on
+assessing data quality across flexible quantitative outputs -from raw areas to
+true concentrations- and giving a basic interpretation of the known analytes
+that come out. The output is deliberately visual, where quality control and
+statistics are presented as plots with interpretable statistical summaries
+(e.g. coefficient of variation), not as a modelling framework. Everything is
+driven from a curated `.xlsx` workbook and a single YAML file, so a run is
+reproducible and the workflow stays accessible to analysts without a coding
+background.
 
-The package reads Waters **TargetLynx** exports (the primary format),
+The YAML configuration doubles as documentation of the run. Inputs and
+parameters are validated before any processing begins -- `validate_input()`
+checks the workbook and `validate_design()` the study design. Each step records
+how the data was handled, from the number of features a blank filter removed to
+the imputation and scaling a PCA applied. Quality control therefore rests on a
+traceable record of how a reported number was arrived at, not on the final
+figure alone -- in line with FAIR principles (Wilkinson *et al.*, 2016).
+
+The package currently reads Waters **TargetLynx** exports (the primary format),
 **Skyline** exports, and plain sample-by-analyte matrices from any other
 software, and covers signal filtering, blank filtering, normalisation,
 concentration adjustment, missing-value imputation and batch correction,
@@ -58,8 +72,9 @@ followed by quality control, statistics and two self-contained HTML reports.
 
 MRManalyzeR begins with **reviewed vendor result tables**. It does not perform
 chromatographic peak detection, peak integration or calibration-curve fitting
-from raw mass-spectrometry data; those judgements stay in TargetLynx or
-Skyline, where the chromatograms are.
+from raw mass-spectrometry data; these decisions are left to the analyst's
+domain expertise, using their preferred software (e.g. TargetLynx or Skyline) to
+inspect and curate the underlying chromatograms.
 
 That is the line which separates it from the Bioconductor packages nearest to
 it, and from the existing targeted-MRM tools:
@@ -72,52 +87,58 @@ it, and from the existing targeted-MRM tools:
 | Chromatogram processing, peak integration, automated identification | MRMAnalyzer, MRMkit, MRMQuant |
 | Post-acquisition targeted-assay processing, QC and reporting | **MRManalyzeR** |
 
-The design assumes a validated targeted panel: roughly 30 MRM transitions
-upward, known compounds carrying class or pathway annotation, authentic
-standards, and an experiment designed to test a hypothesis rather than to
-discover features. Feature metadata is treated as biology, not bookkeeping --
-compound class and enzymatic pathway group and colour the heatmap annotations,
-PCA loadings and correlation blocks throughout.
+The design assumes a validated targeted panel of >20 MRM transitions, known
+compounds carrying class or pathway annotation, and an experiment structured
+around defined target lists -- whether testing a specific hypothesis or
+conducting targeted exploratory profiling. Feature metadata is treated as
+biology, not bookkeeping -- for example compound class and enzymatic pathway
+groups, used to colour heatmap annotations, PCA loadings and correlation blocks
+throughout.
 
 ## Assumptions and limitations
 
 Worth knowing before you rely on the output.
 
-* **Quantification is internal-standard based.** MRManalyzeR deliberately
-  provides conservative normalisation and batch-adjustment methods suited to
-  validated targeted assays, where an isotope-labelled standard has already
-  absorbed most of the run-order and matrix variation. More extensive
-  signal-drift modelling -- QC-RSC spline correction and similar -- remains
-  available through complementary packages such as `pmp`, and is the right
-  choice when the assay does not carry standards of that kind.
 * **Batch correction equalises batch medians.** It assumes the reference
   samples (`QC`, or biological samples if the design is balanced across
   batches) are comparable between batches. `correct_batch()` refuses to run
   without enough reference injections per batch, and warns when the batch
   variable is confounded with a study factor -- but it cannot detect a design
   where that confounding is total.
-* **Concentration adjustment rescales vendor-reported values.** It applies the
-  internal-standard concentration ratio and the sample-volume correction; it
-  does not fit or refit a calibration curve.
+* **Normalisation and quantification depend on assay design.** MRManalyzeR
+  accommodates a range of targeted workflows, whether reporting unadjusted peak
+  areas or fully calibrated concentrations. Its built-in normalisation and
+  batch-adjustment tools assume conservative corrections, however; higher-tier
+  absolute quantification depends on the user's study design (e.g. validated
+  methods with isotope-labelled standards). Where assays lack internal
+  standards to absorb matrix variation and signal drift, packages such as `pmp`
+  offer dedicated spline-based corrections (e.g. QC-RSC).
+* **Concentration adjustment from provided values.** If needed, it applies the
+  internal-standard concentration ratio and the sample-volume correction
+  (assuming sample vial concentration is provided); it does not fit or refit a
+  calibration curve.
 * **Imputation is a fixed fraction of each compound's observed minimum.** That
-  is a convention, not an estimate. Values below the detection limit and
-  values missing for other reasons are not currently distinguished.
-* **Statistical methods are chosen by you, per comparison.** Nothing is
+  is a convention that can be modulated based on the user's expertise, not an
+  estimate. Values below the detection limit and values missing for other
+  reasons are not currently distinguished.
+* **Statistical methods are chosen by the user, per comparison.** Nothing is
   selected automatically from the data, and no test is run in parallel with
   another so that the more convenient answer can be picked afterwards.
 * **Multiple-testing correction is applied within a family**, never across the
-  whole workbook -- see the `adjust_family` column of the stats output.
+  whole workbook.
 
 ## How the package is organised
 
-The workflow falls into four stages. Everything from stage 1 onwards is carried
-in a single `struct::DatasetExperiment` -- the assay matrix, the sample
-metadata and the feature metadata kept aligned in one object -- so every
-function takes that object and returns it, and nothing has to be handed a
-matching metadata table a second time.
+The workflow falls into four stages, preceded by a validation pass that checks
+the workbook and the study design before any data is processed. Everything from
+stage 1 onwards is carried in a single `struct::DatasetExperiment` -- the assay
+matrix, the sample metadata and the feature metadata kept aligned in one object
+-- so every function takes that object and returns it, and nothing has to be
+handed a matching metadata table a second time.
 
 | Stage | Question it answers | Functions |
 |---|---|---|
+| 0. Validation | Is the input usable, and the design sound? | `validate_input()`, `validate_design()` |
 | 1. Data parse | What did the instrument report? | `read_targetlynx()`, `read_skyline()`, `assemble_dataset()`, `load_config()`, `load_dataset()`, `combine_datasets()` |
 | 2. Peak-matrix processing | What is the true concentration? | `filter_blanks()`, `normalise_matrix()`, `adjust_concentration()`, `impute_missing()`, `correct_batch()`, `subset_dataset()`, `process_dataset()` |
 | 3. QC check | Can these numbers be trusted? | `add_cv_metrics()`, `summarise_features()`, `run_pca()`, `plot_drift()`, `plot_qq()`, `plot_pca()`, `plot_loadings()` |
@@ -125,6 +146,9 @@ matching metadata table a second time.
 
 ```
    project_config.yml            workbook.xlsx
+           |                           |
+           |                  validate_input()                     [0]
+           |                  validate_design()
            |                           |
            |                  read_targetlynx() / read_skyline()   [1]
            |                           |
@@ -254,10 +278,10 @@ dt(as.data.frame(table(Sample_type = meta$Sample_type)),
 
 Because the panel is known in advance, `feature_metadata` can carry real
 biology alongside the reporting decision -- the enzymatic pathway a compound
-comes from, its precursor PUFA, its retention time. Those columns are not
-decoration: they colour the PCA loadings, group the heatmap rows and define the
-ion ratios, and they travel with the data as `variable_meta` all the way to the
-output.
+comes from, its precursor PUFA, its retention time. Those columns serve a
+functional role: they colour the PCA loadings, group the heatmap rows and define
+the metabolite ratios, and they travel with the data as `variable_meta` all the
+way to the output.
 
 ```{r dataset-features}
 dt(fdata[fdata$Report == "YES",
@@ -270,9 +294,9 @@ dt(fdata[fdata$Report == "YES",
 TargetLynx does not export a matrix. Its "complete summary" (`Edit > Copy >
 Complete Summary`, pasted straight into the `lcms_data` sheet) is a *stacked*
 table -- one block per compound, each block its own little table of injections,
-with the compound name in a header row between blocks. It is awkward to read by
-eye and worse to read programmatically, which is the first problem the package
-solves.
+with the compound name in a header row between blocks. It is tedious to inspect
+visually and does not parse into R with existing tools, which is the first
+problem the package solves.
 
 `read_targetlynx()` parses those blocks, pivots them into a wide
 **sample x compound** matrix of the requested `datatype` column, and (with
@@ -295,24 +319,24 @@ renamed without touching the analysis.
 `read_skyline()` returns the same contract from a Skyline molecule x sample
 sheet, with `signal_filter = "LOD"` or `"LOQ"` in place of the S/N mask.
 
+Output from any other software can be supplied as a plain sample-by-analyte
+matrix, which enters the workflow at `assemble_dataset()` and is processed
+identically from there on. Readers for further vendor formats are planned for a
+later version; suitable test data is being sought, since a reader written
+without real exports to check it against is not one worth relying on.
+
 ## The simulated dataset used from here on
 
 The example above is a single chromatographic batch, injected from one
-reconstitution volume, with no per-sample amount to normalise to -- so
+reconstitution volume, with no per-sample amount to normalise to so
 normalisation, concentration adjustment and batch correction would all be
-no-ops on it. The package therefore bundles a second, **entirely simulated**
+incompatible. The package therefore bundles a second, **entirely simulated**
 workbook: a Skyline-layout export of 20 analytes across three enzymatic
 pathways, 54 injections split over two chromatographic batches, with a
 per-sample protein amount and a different reconstitution volume per batch.
 
-Nothing in it is measured data. It is generated from a fixed seed by
-`data-raw/make_example_synthetic.R` (which ships with the package source), and
-what it contains was deliberately planted so each step can be seen recovering
-something known: a response shift between the two batches, a treatment effect
-on 5 of the 20 analytes -- recorded in `feature_metadata$Simulated_log2FC` --
-and QC injections drawn with about 8 percent noise against 35 percent between
-animals. The study design is balanced across the batches, so the batch effect
-and the treatment effect are not confounded.
+The study design is balanced across the batches, so the batch effect and the
+treatment effect are not confounded.
 
 ```{r syn-data}
 sxlsx <- system.file("extdata", "example_synthetic.xlsx",
@@ -365,17 +389,17 @@ round(as.data.frame(de$data)[1:3, 1:3], 3)
 ## Concentration adjustment
 
 A calibration curve returns the concentration *in the vial the instrument
-sampled*, and it does so on the calibrant's terms: the curve was built at the
-calibrant's internal-standard concentration, and it silently assumes your
-sample carries the same one. `adjust_concentration()` corrects that assumption:
+sampled*, and it does so based on the calibrant vial: the curve was built at the
+calibrant's internal-standard concentration, and it assumes the sample carries
+the same. `adjust_concentration()` corrects that assumption (based on the same
+volume of calibration and study sample being injected into the instrument):
 
 $$
 \text{conc} \times \frac{\text{cal vol}}{\text{sample vol}}
             \times \frac{\text{sample IS}}{\text{cal IS}}
 $$
 
-Those two ratios are one thing, not two. Multiply them out and they collapse to
-a single quantity:
+Ultimately leading to:
 
 $$
 \frac{\text{cal vol}}{\text{sample vol}} \times
@@ -394,26 +418,15 @@ reads high, and this factor -- below 1 -- scales it back down.
 
 Note what is *not* being corrected here. Reconstituting in more solvent dilutes
 the analyte and the internal standard equally, so the response ratio does not
-move and neither does the curve's answer. The reconstitution volume matters
-only through the IS concentration, which is exactly what the expression above
-captures. (This reasoning depends on quantification being IS-ratio based, as it
-is for a targeted assay with stable-isotope standards. Pointing `adjust_conc`
-at a raw `Area` datatype with no IS correction would break the assumption.)
+move and neither does the curve's answer.
 
 Setting `starting_vol_col` adds a second step, back to the concentration in the
-original, undried sample -- the plasma or lavage volume actually taken into
-extraction -- so results are reported per unit of biofluid rather than per vial.
-Following one analyte amount `A` through both steps:
+original, undried sample:
 
-```
-  curve gives     conc_reported = (A / IS_sample) x [IS] in calibrant
-  step 1 gives    conc_vial     = A / sample_vol
-  step 2 gives    conc_original = A / starting_vol
-```
-
-`sample_vol` cancels between the two steps, and it should: the final number
-depends only on how much analyte was there and the volume of biofluid it came
-from, never on how much solvent you happened to reconstitute in.
+$$
+\text{conc}_{\text{original}} = \text{conc}_{\text{vial}} \times
+\frac{\text{sample vol}}{\text{starting vol}}
+$$
 
 ```{r step-adjust}
 de <- adjust_concentration(de,
@@ -429,10 +442,10 @@ round(as.data.frame(de$data)[1:3, 1:3], 5)
 
 `impute_missing()` replaces the remaining `NA`s in the biological samples with a
 fraction of that compound's minimum observed value, treating a non-detect as
-lying just below the lowest measurement rather than as a zero or a hole.
-`scalar = 0.5` is the familiar half-minimum rule; a smaller fraction (0.2) is
-more conservative if the panel has compounds sitting near the detection limit.
-Blanks are left untouched -- they are diagnostics, not measurements.
+lying just below the lowest measurement rather than as a zero. `scalar = 0.5` is
+the half-minimum rule; a smaller fraction such as the 0.2 used here is more
+conservative, and is the better default where the panel has compounds sitting
+near the detection limit. Blanks are left untouched.
 
 Other strategies are available where they matter most, in the PCA
 pre-processing (`run_pca(impute = )`), which offers `"none"`, `"min"`,
@@ -442,7 +455,7 @@ For targeted panels the choice is rarely critical: a compound missing in most
 samples is usually better dropped than modelled.
 
 ```{r step-impute}
-de <- impute_missing(de, scalar = 0.5, blank_head = "Sample_type",
+de <- impute_missing(de, scalar = 0.2, blank_head = "Sample_type",
                      blank_name = "Blank")
 sum(is.na(de$data))
 ```
@@ -536,20 +549,13 @@ dt(cv[order(cv$CV_QC), ], rownames = FALSE, page = 10)
 ```
 
 * **`CV_QC`** is the coefficient of variation across the pooled QC injections.
-  Every QC is the same material, so this is **technical** variability -- the
-  measurement noise of that compound in that run. It is the primary
-  quantification filter: a common rule of thumb keeps compounds under 20-30
-  percent CV~QC~ and reports the rest as detected but not reliably quantified.
-  It is `NA` when a run contains no QC injections.
+  Every QC is the same material, so this is **technical** variability.
 * **`CV_sample`** is the same statistic across the biological samples, so it
   carries the **biological** spread *plus* that same technical noise.
-* **`CV_sample_vs_QC`** is `CV_sample / CV_QC`. A ratio comfortably above 1
-  means the biological signal is larger than the noise it is measured against
-  -- the compound has room to show a real difference. A ratio near 1 means a
-  compound is varying no more between animals than between replicate injections
-  of identical material: whatever passed the CV~QC~ filter, there is little
-  biology left to find in it. Sorting the panel by this ratio is a quick way to
-  see which analytes are worth interpreting before running any test.
+* **`CV_sample_vs_QC`** is `CV_sample / CV_QC`. A ratio of biological and
+  technical variance, where higher values show most variance is biological.
+  A ratio above 2 is a commonly cited reference point (Broadhurst *et al.*,
+  2018), though the analyst should decide.
 
 ## Analytical drift
 
@@ -579,8 +585,15 @@ plot_qq(syn, "Analyte_02", transform = "log2", levels = "Sample")
 centring and scaling, and returns the fit together with a readable trace of
 what it did. `plot_pca()` draws the scores.
 
+Blanks are dropped first. They are diagnostics rather than measurements, and
+leaving them in gives them a say in the components: a blank sits far from every
+real sample, so it can dominate the variance the PCA is trying to describe.
+`run_pca()` does not filter them for you, so the subset is explicit.
+
 ```{r qc-pca}
-pca <- run_pca(syn, impute = "frac_min", impute_frac = 0.2,
+syn_bio <- subset_dataset(syn, conditions = list(Sample_type = c("Sample", "QC")))
+
+pca <- run_pca(syn_bio, impute = "frac_min", impute_frac = 0.2,
                transform = "log2", feat_na_max = 0.6,
                sample_na_max = 0.6)
 pca$steps
@@ -591,7 +604,7 @@ depending on what you colour them by. The report draws one plot per column
 listed under `qc_pca.color_by`.
 
 ```{r qc-pca-type, fig.height = 4.2}
-plot_pca(pca, syn, colour_by = "Sample_type")
+plot_pca(pca, syn_bio, colour_by = "Sample_type")
 ```
 
 Colouring by chromatographic batch is the sharpest of these -- if the batches
@@ -601,6 +614,7 @@ PCA before and after `correct_batch()`:
 
 ```{r qc-pca-batch, fig.height = 3.4}
 pca_by_batch <- function(x, title){
+  x <- subset_dataset(x, conditions = list(Sample_type = c("Sample", "QC")))
   p <- run_pca(x, impute = "frac_min", impute_frac = 0.2,
                transform = "log2")
   plot_pca(p, x, colour_by = "Chrom_Batch") +
@@ -621,7 +635,7 @@ list into something interpretable -- the palette is shared with the heatmap
 annotation, so a class is the same colour in every figure.
 
 ```{r qc-loadings, fig.width = 7, fig.height = 5}
-plot_loadings(pca, syn, colour_by = "Enzymatic_pathway")
+plot_loadings(pca, syn_bio, colour_by = "Enzymatic_pathway")
 ```
 
 ## What was reported, and what was dropped
@@ -658,15 +672,19 @@ dt(cbind(gs[, 1:3], round(gs[, 4:6], 3)), rownames = FALSE)
 
 ## Comparisons
 
-`run_stats()` runs the comparisons, correlations, linear models and ion ratios
-described by the `stats_report:` block of the YAML and returns tidy tables. The
-method is chosen from the design rather than by the user: two levels get a
-t-test and a Wilcoxon test, three or more get ANOVA and Kruskal-Wallis with
-Tukey and pairwise-Wilcoxon post-hoc tests, and p-values are FDR-adjusted.
+`run_stats()` runs the comparisons, correlations, linear models and metabolite
+ratios described by the `stats_report:` block of the YAML and returns tidy
+tables. The method is named explicitly per comparison: `welch` (the default),
+`student` or `wilcoxon` where a factor has two levels, `anova` or `kruskal`
+where it has three or more, the latter carrying Tukey and pairwise-Wilcoxon
+post-hoc tests. Nothing is picked from the data itself, and p-values are
+FDR-adjusted within each family.
 
-Reporting a parametric and a non-parametric test side by side is deliberate:
-targeted panels are frequently run on small groups where normality cannot be
-taken on trust, and agreement between the two is itself a piece of evidence.
+Naming the test rather than inferring it is deliberate: targeted panels are
+frequently run on small groups where normality cannot be taken on trust, so the
+choice between a parametric and a non-parametric test is a real one. Making it
+in the YAML, before the data is seen, keeps that judgement visible and stops a
+more convenient result being selected after the fact.
 
 ```{r stats-run}
 params <- list(
@@ -755,9 +773,10 @@ plot_correlation(run_stats(samples, cp), samples,
                  group_by = "Enzymatic_pathway")
 ```
 
-## Ion ratios
+## Metabolite ratios
 
-An ion ratio is an enzyme-activity surrogate: the ratio of a product to its
+These are ratios between metabolites, used to infer enzymatic activity (not the
+qualifier-to-quantifier transition ratios). The ratio of a product to its
 precursor tracks flux through a pathway more directly than either compound
 alone, because it cancels the shared variation in how much substrate was there.
 `run_stats()` returns the per-sample ratios with a group test attached, so they
@@ -834,15 +853,13 @@ file recording the exact parameters used.
 
 The stats workbook opens on a `key` sheet defining every column heading it
 contains -- what `adjust_family` covers, how `log2FC` is signed, which effect
-size `effect_type` names. The workbook usually outlives the session that
-produced it, so it carries its own glossary rather than relying on this
-vignette.
+size `effect_type` names.
 
 ## Merging several acquisition panels
 
-Where a study is split across methods -- a polar-acid and a polar-basic panel,
-say -- each is processed on its own with `run_MRManalyzeR()` first, and the
-resulting `.RDS` files are merged:
+Where a study is split across methods, for example a polar-acid and a
+polar-basic panel, each is processed on its own with `run_MRManalyzeR()` first,
+and the resulting `.RDS` files are merged:
 
 ```{r run-combine, eval = FALSE}
 file.copy(
@@ -860,6 +877,12 @@ its feature names so that a compound measured on two methods does not collide.
 
 # References {#references}
 
+Broadhurst D. *et al.* (2018). Guidelines and considerations for the use of
+system suitability and quality control samples in mass spectrometry assays
+applied in untargeted clinical metabolomic studies. *Metabolomics*.
+doi:[10.1007/s11306-018-1367-3](https://doi.org/10.1007/s11306-018-1367-3)
+-- source of the dispersion-ratio reference point used in the QC section.
+
 Kolmert J. *et al.* (2018). Prominent release of lipoxygenase generated
 mediators in a murine house dust mite-induced asthma model.
 *Prostaglandins & Other Lipid Mediators*.
@@ -868,8 +891,13 @@ doi:[10.1016/j.prostaglandins.2018.05.005](https://doi.org/10.1016/j.prostagland
 
 Lloyd G.R., Jankevics A., Weber R.J.M. (2020). struct: an R/Bioconductor-based
 framework for standardized metabolomics data analysis. *Bioinformatics*.
-doi:[10.1093/bioinformatics/btaa227](https://doi.org/10.1093/bioinformatics/btaa227)
+doi:[10.1093/bioinformatics/btaa1031](https://doi.org/10.1093/bioinformatics/btaa1031)
 -- the `DatasetExperiment` container used throughout.
+
+Wilkinson M.D. *et al.* (2016). The FAIR Guiding Principles for scientific data
+management and stewardship. *Scientific Data* **3**, 160018.
+doi:[10.1038/sdata.2016.18](https://doi.org/10.1038/sdata.2016.18)
+-- the reproducibility principles the configuration-driven workflow follows.
 
 # Session info
 

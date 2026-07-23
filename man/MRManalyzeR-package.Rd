@@ -77,6 +77,7 @@ Useful links:
 Authors:
 \itemize{
   \item Matthew J. Smith \email{mattyjsmith123@gmail.com} (\href{https://orcid.org/0000-0002-7357-2670}{ORCID})
+  \item Antonio Checa (\href{https://orcid.org/0000-0002-0674-3329}{ORCID})
 }
 
 }
