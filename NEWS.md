@@ -1,3 +1,14 @@
+# MRManalyzeR 0.99.2
+
+* New `plot_group_heatmap()`: a group-mean heatmap where the hue is the group
+  mean and the opacity of each sample's sub-cell is that sample's contribution
+  to it, so a mean resting on a single sample is visible rather than hidden.
+  `plot_heatmap()` is unchanged and remains the right choice while the sample
+  axis is still legible - it never averages.
+* The colour limit defaults from the group means themselves rather than from a
+  per-sample scale, since averaging replicates shrinks a scaled value by
+  roughly sqrt(n) and an inherited limit leaves the panel washed out.
+
 # MRManalyzeR 0.99.1
 
 * Vignette and README reworked following review: repositioned around flexible

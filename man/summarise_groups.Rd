@@ -40,6 +40,7 @@ head(summarise_groups(de, "Treatment"))
 Other stats:
 \code{\link[=plot_boxplot]{plot_boxplot()}},
 \code{\link[=plot_correlation]{plot_correlation()}},
+\code{\link[=plot_group_heatmap]{plot_group_heatmap()}},
 \code{\link[=plot_heatmap]{plot_heatmap()}},
 \code{\link[=plot_volcano]{plot_volcano()}},
 \code{\link[=run_stats]{run_stats()}}

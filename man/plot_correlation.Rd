@@ -68,6 +68,7 @@ plot_correlation(st, de, group_by = "Enzymatic_pathway")
 \seealso{
 Other stats:
 \code{\link[=plot_boxplot]{plot_boxplot()}},
+\code{\link[=plot_group_heatmap]{plot_group_heatmap()}},
 \code{\link[=plot_heatmap]{plot_heatmap()}},
 \code{\link[=plot_volcano]{plot_volcano()}},
 \code{\link[=run_stats]{run_stats()}},

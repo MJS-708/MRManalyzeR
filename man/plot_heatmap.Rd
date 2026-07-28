@@ -102,6 +102,7 @@ plot_heatmap(de, color_samples_by = "Treatment",
 Other stats:
 \code{\link[=plot_boxplot]{plot_boxplot()}},
 \code{\link[=plot_correlation]{plot_correlation()}},
+\code{\link[=plot_group_heatmap]{plot_group_heatmap()}},
 \code{\link[=plot_volcano]{plot_volcano()}},
 \code{\link[=run_stats]{run_stats()}},
 \code{\link[=summarise_groups]{summarise_groups()}}
