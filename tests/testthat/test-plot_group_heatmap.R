@@ -39,34 +39,54 @@ test_that("alpha reaches the floor and the ceiling for the right samples", {
   expect_true(any(abs(p$data$alpha - 0.25) < 1e-8))
 })
 
-test_that("a sample opposing its group mean fades, one carrying it does not", {
-  # Two groups, three compounds. In group B every sample moves up together; in
-  # group A one sample is far up and the others sit flat, so A's mean is
-  # carried by that one sample.
-  set.seed(42)
+# Two-group toy panels. The scaling is across ALL samples, so which sample
+# "contributes" depends on where its group's mean sits relative to the global
+# mean - not on which sample has the largest raw value. The next two tests pin
+# down both sides of that, because it is the part of the encoding easiest to
+# reason about wrongly.
+.toy_de <- function(a_values, b_values, seed = 42L){
+  set.seed(seed)
   M <- matrix(0, nrow = 8, ncol = 3,
               dimnames = list(paste0("S", 1:8), paste0("F", 1:3)))
-  M[1, ] <- 10            # A: the single sample carrying the mean
-  M[2:4, ] <- 0           # A: contributing nothing
-  M[5:8, ] <- 4           # B: all moving together
+  M[1:4, ] <- a_values
+  M[5:8, ] <- b_values
   M <- M + matrix(rnorm(24, sd = 0.01), nrow = 8)   # break exact ties
-
   sm <- data.frame(Treatment = rep(c("A", "B"), each = 4),
                    row.names = rownames(M))
   vm <- data.frame(Compound = colnames(M), row.names = colnames(M))
-  de <- struct::DatasetExperiment(data = as.data.frame(M), sample_meta = sm,
-                                  variable_meta = vm, name = "toy",
-                                  description = "toy")
+  struct::DatasetExperiment(data = as.data.frame(M), sample_meta = sm,
+                            variable_meta = vm, name = "toy",
+                            description = "toy")
+}
 
-  p <- plot_group_heatmap(de, group_by = "Treatment", alpha_floor = 0.2)
-  d <- p$data
+test_that("the sample that sets a group's mean is opaque, the rest are not", {
+  # A = one sample high, three just above the global centre. S1's deviation is
+  # 7x the others', so it outvotes them and A's mean comes out positive - S1 is
+  # what produced it.
+  de <- .toy_de(c(10, 1, 1, 1), rep(2, 4))
+  d  <- plot_group_heatmap(de, group_by = "Treatment", alpha_floor = 0.2)$data
 
   a_carrier <- mean(d$alpha[d$sample == "S1"])
-  a_flat    <- mean(d$alpha[d$sample %in% c("S2", "S3", "S4")])
-  b_all     <- mean(d$alpha[d$sample %in% c("S5", "S6", "S7", "S8")])
+  a_rest    <- mean(d$alpha[d$sample %in% c("S2", "S3", "S4")])
 
-  expect_gt(a_carrier, a_flat)     # the sample that made the mean is opaque
-  expect_gt(b_all, a_flat)         # a group moving together is opaque
+  expect_gt(a_carrier, a_rest)
+  expect_equal(a_rest, 0.2, tolerance = 1e-6)   # they pull the other way
+  expect_gt(a_carrier, 0.9)                     # it alone carries the block
+})
+
+test_that("an extreme sample outvoted by its own group fades", {
+  # The mirror case, and the one that caught me out writing these tests: A has
+  # one sample far up and three far DOWN, so the three set the group mean and
+  # the extreme sample is the one opposing it. Largest raw value does not mean
+  # largest contribution.
+  de <- .toy_de(c(10, 0, 0, 0), rep(4, 4))
+  d  <- plot_group_heatmap(de, group_by = "Treatment", alpha_floor = 0.2)$data
+
+  a_extreme  <- mean(d$alpha[d$sample == "S1"])
+  a_majority <- mean(d$alpha[d$sample %in% c("S2", "S3", "S4")])
+
+  expect_gt(a_majority, a_extreme)
+  expect_equal(a_extreme, 0.2, tolerance = 1e-6)
 })
 
 test_that("degenerate input returns NULL rather than erroring", {

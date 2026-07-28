@@ -83,6 +83,15 @@ that moved with its group is opaque and one that sat near zero, or pulled
 the other way, fades. `alpha_floor` stops a non-contributing sample becoming
 invisible and reading as missing data; genuinely missing values are drawn in
 `na.value` grey at full opacity, so the two cannot be confused.
+
+Note that "contributed" is measured against the mean of **all** samples, not
+against the group's own members, so it is not the same as "has the largest
+value". A group of four holding one very high sample and three low ones has
+a *negative* mean if the three sit further from the overall centre than the
+one sits above it - and then the three are what produced that mean, and the
+high sample is the one opposing it and fading out. That is the intended
+reading: opacity answers "did this sample push its group where the group
+ended up", not "is this sample large".
 }
 
 \section{Choosing the colour limit}{
