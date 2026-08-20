@@ -92,15 +92,15 @@ Run the workflow against a small bundled oxylipin dataset to verify the
 install and produce both reports. No paths to configure:
 
 ```r
-res <- MRManalyzeR::run_example()
+res <- MRManalyzeR::runExample()
 res$output_directory   # where the xlsx + html reports were written
 res$datasetExperiment  # the processed dataset
 res$stats_tables       # comparisons, correlations, linear models
 ```
 
-`run_example()` copies the bundled YAML, points it at
+`runExample()` copies the bundled YAML, points it at
 `inst/extdata/example_data.xlsx` and a fresh `tempdir()`, runs
-`run_MRManalyzeR()`, and (in interactive sessions) opens the rendered
+`runMRManalyzeR()`, and (in interactive sessions) opens the rendered
 HTML reports in the RStudio viewer / default browser.
 
 ### The returned object
@@ -142,16 +142,16 @@ step can be called directly on a `DatasetExperiment`:
 ```r
 library(MRManalyzeR)
 
-de <- assemble_dataset(read_targetlynx("study.xlsx", datatype = "Area"),
+de <- assembleDataset(readTargetLynx("study.xlsx", datatype = "Area"),
                        feature_meta, sample_meta)
-de <- filter_blanks(de)
-de <- normalise_matrix(de, column = "protein_mg")
-de <- impute_missing(de, scalar = 0.2)
-de <- correct_batch(de, batch_head = "Chrom_Batch")
+de <- filterBlanks(de)
+de <- normaliseMatrix(de, column = "protein_mg")
+de <- imputeMissing(de, scalar = 0.2)
+de <- correctBatch(de, batch_head = "Chrom_Batch")
 
-qc  <- add_cv_metrics(de)
-pca <- run_pca(de, transform = "log2", scale = TRUE)
-plot_pca(pca, de, colour_by = "Treatment")
+qc  <- addCVMetrics(de)
+pca <- runPCA(de, transform = "log2", scale = TRUE)
+plotPCA(pca, de, colour_by = "Treatment")
 ```
 
 See `vignette("MRManalyzeR")` for the full walkthrough, and `?MRManalyzeR`
@@ -210,7 +210,7 @@ before editing.
 ### Step 3 — run
 
 ```r
-res <- MRManalyzeR::run_MRManalyzeR("config.yml")
+res <- MRManalyzeR::runMRManalyzeR("config.yml")
 ```
 
 This writes, into `paths.result_dir`:
@@ -244,7 +244,7 @@ file.copy(
   system.file("extdata", "example_combine_config.yml", package = "MRManalyzeR"),
   "combine_config.yml"
 )
-res <- MRManalyzeR::run_MRManalyzeR_combine("combine_config.yml")
+res <- MRManalyzeR::runMRManalyzeRCombine("combine_config.yml")
 ```
 
 The combine YAML lists per-panel paths (`.RDS` or `.xlsx`), optional QC

@@ -29,7 +29,7 @@
 #' analyses would make the size of the correction depend on how many other
 #' things happened to be configured in the same YAML.
 #'
-#' @param de A `struct::DatasetExperiment` (from `run_MRManalyzeR()` or `readRDS()`).
+#' @param de A `struct::DatasetExperiment` (from `runMRManalyzeR()` or `readRDS()`).
 #' @param st_params The `stats_report:` block from the YAML (a list).
 #' @return A list with elements `stats`, `correlations`, `linear_models`,
 #'   each a data frame (possibly with 0 rows if the corresponding YAML
@@ -45,10 +45,10 @@
 #' params <- list(comparisons = list(enabled = TRUE, entries = list(
 #'   list(name = "ctrl_vs_trt", method = "welch",
 #'        compare = list(factor = "Group", levels = c("ctrl", "trt"))))))
-#' run_stats(de, params)$stats
+#' runStats(de, params)$stats
 #' @family stats
 #' @export
-run_stats = function(de, st_params){
+runStats = function(de, st_params){
 
   comparisons   = .section_entries(st_params$comparisons,   "comparisons")
   correlations  = .section_entries(st_params$correlations,  "correlations")
@@ -223,7 +223,7 @@ run_stats = function(de, st_params){
   if(is.null(m)){
     m = allowed[1]
     message(sprintf(
-      "[run_stats] comparison '%s' has no method:; defaulting to '%s'. Set method: in the YAML to pre-specify the test.",
+      "[runStats] comparison '%s' has no method:; defaulting to '%s'. Set method: in the YAML to pre-specify the test.",
       comp_name, m))
     return(m)
   }
@@ -232,7 +232,7 @@ run_stats = function(de, st_params){
   if(identical(m, "t_test") || identical(m, "t-test")) m = "welch"
   if(!m %in% allowed)
     stop(sprintf(
-      "[run_stats] comparison '%s': method '%s' is not valid for %d groups. Use one of: %s.",
+      "[runStats] comparison '%s': method '%s' is not valid for %d groups. Use one of: %s.",
       comp_name, m, ngrp, paste(allowed, collapse = ", ")))
   m
 }
@@ -248,7 +248,7 @@ run_stats = function(de, st_params){
     stop(sprintf("Comparison '%s': compare.factor and compare.levels required.", comp_name))
 
   # Build a single combined subset: user-supplied conditions + the level
-  # restriction. subset_dataset() supports vector values via %in%, so we can pass
+  # restriction. subsetDataset() supports vector values via %in%, so we can pass
   # `levels_keep` directly. Doing it in one call avoids mutating the DE in
   # place (which trips SummarizedExperiment's assay-replacement check).
   cond = comp$subset
@@ -258,7 +258,7 @@ run_stats = function(de, st_params){
     stop(sprintf("Comparison '%s': factor '%s' not in sample_meta.",
                  comp_name, factor_name))
   cond[[factor_name]] = levels_keep
-  de_sub = subset_dataset(de, conditions = cond)
+  de_sub = subsetDataset(de, conditions = cond)
 
   group = factor(de_sub$sample_meta[[factor_name]], levels = levels_keep)
   if(nlevels(droplevels(group)) < 2){
@@ -319,7 +319,7 @@ run_stats = function(de, st_params){
                    comp_name, length(common)))
     if(length(common) < length(s1) || length(common) < length(s2))
       message(sprintf(
-        "[run_stats] comparison '%s': %d subject(s) measured in both groups; unmatched observations dropped.",
+        "[runStats] comparison '%s': %d subject(s) measured in both groups; unmatched observations dropped.",
         comp_name, length(common)))
     i1 = i1[match(common, s1)]
     i2 = i2[match(common, s2)]
@@ -536,7 +536,7 @@ run_stats = function(de, st_params){
                 else paste(sprintf("%s=%s", names(sub), unlist(sub)),
                            collapse = ", ")
 
-      de_sub = subset_dataset(de, conditions = if(length(sub)) as.list(sub) else NULL)
+      de_sub = subsetDataset(de, conditions = if(length(sub)) as.list(sub) else NULL)
       X = as.matrix(de_sub$data)
 
       if(ncol(X) < 2 || nrow(X) < 3){
@@ -655,7 +655,7 @@ run_stats = function(de, st_params){
     name = mod$name %||% "unnamed_model"
     rhs  = mod$formula %||% stop(sprintf("Linear model '%s': `formula` required.", name))
     cond = mod$subset; if(!is.null(cond)) cond = as.list(cond)
-    de_sub = subset_dataset(de, conditions = cond)
+    de_sub = subsetDataset(de, conditions = cond)
 
     feats = colnames(de_sub$data)
     smeta = de_sub$sample_meta
@@ -795,7 +795,7 @@ run_stats = function(de, st_params){
     return(section$entries %||% list())
   }
   stop(sprintf(
-    "[run_stats] '%s:' must be a block with 'enabled:' and 'entries:' (got a bare list). Wrap the list under 'entries:' and add 'enabled: True'.",
+    "[runStats] '%s:' must be a block with 'enabled:' and 'entries:' (got a bare list). Wrap the list under 'entries:' and add 'enabled: True'.",
     section_name))
 }
 
@@ -905,7 +905,7 @@ run_stats = function(de, st_params){
       if(!isTRUE(comp$enabled %||% TRUE)) next
       cond = if(is.null(comp$subset)) list() else as.list(comp$subset)
       cond[[comp$compare$factor]] = comp$compare$levels
-      de_sub = tryCatch(subset_dataset(de, conditions = cond),
+      de_sub = tryCatch(subsetDataset(de, conditions = cond),
                         error = function(e) NULL)
       if(is.null(de_sub) || nrow(as.data.frame(de_sub$sample_meta)) == 0) next
 

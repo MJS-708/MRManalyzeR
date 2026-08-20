@@ -24,7 +24,7 @@ library(ggplot2)
 ```
 
 ```{r unpack-params}
-# `report_pars` is injected by run_MRManalyzeR().
+# `report_pars` is injected by runMRManalyzeR().
 # Falls back to legacy uva_pars / mva_pars if running outside that wrapper.
 if(!exists("report_pars") || is.null(report_pars))
   report_pars = if(exists("uva_pars")) uva_pars else mva_pars
@@ -176,11 +176,11 @@ DT::datatable(
 # Per-feature CV in QC vs samples (when QC samples present)
 # CV_QC over QC rows; CV_sample over biological-sample rows only (NOT
 # "everything non-QC", which would fold in blanks / calibration curves).
-# add_cv_metrics() is idempotent, so recomputing here is safe even though
-# run_MRManalyzeR() has already applied it.
+# addCVMetrics() is idempotent, so recomputing here is safe even though
+# runMRManalyzeR() has already applied it.
 qc_idx = which(metadata[[sample_type_head]] %in% qc_label)
 
-.cv_de = add_cv_metrics(combined_datamatrices,
+.cv_de = addCVMetrics(combined_datamatrices,
                         sample_type_head = sample_type_head,
                         qc_label         = qc_label,
                         sample_labels    = sample_labels)
@@ -242,7 +242,7 @@ for(i in seq_along(compound_names)){
   compound = compound_names[i]
   cid      = safe_ids[i]
 
-  p = plot_drift(combined_datamatrices, compound,
+  p = plotDrift(combined_datamatrices, compound,
                  sample_type_head     = sample_type_head,
                  levels               = intensity_plot_levels,
                  injection_order_head = injection_order_head,
@@ -304,7 +304,7 @@ function showQQPlot_%s(id){
     compound = compound_names[i]
     cid      = safe_ids_qq[i]
 
-    p = plot_qq(combined_datamatrices, compound, transform = tr,
+    p = plotQQ(combined_datamatrices, compound, transform = tr,
                 sample_type_head = sample_type_head,
                 levels           = intensity_plot_levels,
                 value_label      = units)
@@ -342,7 +342,7 @@ smeta_pca = metadata[keep, , drop = FALSE]
 rownames(X)         = .qc_rn
 rownames(smeta_pca) = .qc_rn
 
-res_pca = run_pca(X,
+res_pca = runPCA(X,
                            impute        = qc_pca_impute,
                            impute_frac   = qc_pca_impute_frac,
                            transform     = qc_pca_transform,
@@ -379,7 +379,7 @@ if(is.null(res_pca$pr)){
     # Injection order is stored as character in some workbooks but is really a
     # sequence, so force a continuous scale for it; everything else is decided
     # from the column's own type.
-    p = plot_pca(res_pca, smeta_pca, colour_by = col_name,
+    p = plotPCA(res_pca, smeta_pca, colour_by = col_name,
                  label         = qc_pca_label,
                  label_factor  = qc_pca_label_factor,
                  ellipse       = qc_pca_ellipse,
@@ -402,7 +402,7 @@ source columns with no `feature_metadata` entry — filter the `Status` column t
 see one group at a time.
 
 ```{r feature-summary}
-feature_summary = summarise_features(combined_datamatrices, removed_features)
+feature_summary = summariseFeatures(combined_datamatrices, removed_features)
 
 DT::datatable(feature_summary, filter = "top",
               options = list(pageLength = 25, scrollX = TRUE))

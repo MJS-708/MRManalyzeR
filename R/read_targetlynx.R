@@ -5,7 +5,7 @@
 #' optionally masks values whose per-injection S/N is below `snr`. Columns are
 #' the raw TargetLynx compound (`Processing_name`) identifiers; the
 #' rename-to-`Compound` and feature/sample filtering happen later in
-#' [process_dataset()].
+#' [processDataset()].
 #'
 #' @param xlsx_path Path to the TargetLynx xlsx workbook.
 #' @param datatype TargetLynx column to report (e.g. "Area", "Response",
@@ -18,11 +18,11 @@
 #'   (`Processing_name`), numeric.
 #' @examples
 #' xlsx <- system.file("extdata", "example_data.xlsx", package = "MRManalyzeR")
-#' m <- read_targetlynx(xlsx, datatype = "Area", snr = 3)
+#' m <- readTargetLynx(xlsx, datatype = "Area", snr = 3)
 #' dim(m)
 #' @family data parse
 #' @export
-read_targetlynx = function(xlsx_path, datatype = "Area",
+readTargetLynx = function(xlsx_path, datatype = "Area",
                            tl_headers = c("ID", "Name", "Area", "ng/mL", "Response", "S/N"),
                            snr = FALSE, data_tab_names = NULL){
 

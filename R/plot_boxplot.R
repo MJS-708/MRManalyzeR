@@ -7,7 +7,7 @@
 #' `type = "box"` draws a box with the individual injections jittered over it,
 #' which is the honest view for the small groups a targeted study usually has:
 #' the reader can count the points. `type = "bar"` draws group means with SD or
-#' SE error bars, matching [summarise_groups()] exactly. Reports commonly show
+#' SE error bars, matching [summariseGroups()] exactly. Reports commonly show
 #' both, the box for distribution and the bar for the summary the statistics
 #' were computed on.
 #'
@@ -32,16 +32,16 @@
 #'   `FALSE` keeps ggplot2's default hue scale.
 #' @return A `ggplot`.
 #' @examples
-#' de <- load_dataset(system.file("extdata", "example_synthetic.RDS",
+#' de <- loadDataset(system.file("extdata", "example_synthetic.RDS",
 #'                                package = "MRManalyzeR"))
-#' de <- subset_dataset(de, conditions = list(Sample_type = "Sample"))
-#' plot_boxplot(de, "Analyte_02", "Treatment", value_label = "ng/mL")
-#' plot_boxplot(de, "Analyte_02", "Treatment", type = "bar",
+#' de <- subsetDataset(de, conditions = list(Sample_type = "Sample"))
+#' plotBoxplot(de, "Analyte_02", "Treatment", value_label = "ng/mL")
+#' plotBoxplot(de, "Analyte_02", "Treatment", type = "bar",
 #'              error_bar = "SE")
 #' @family stats
-#' @seealso [summarise_groups()] for the numbers the bars are drawn from.
+#' @seealso [summariseGroups()] for the numbers the bars are drawn from.
 #' @export
-plot_boxplot = function(de, compound, group_by, facet_by = NULL,
+plotBoxplot = function(de, compound, group_by, facet_by = NULL,
                         type           = c("box", "bar"),
                         error_bar      = c("SD", "SE", "none"),
                         value_label    = "value",
@@ -57,16 +57,16 @@ plot_boxplot = function(de, compound, group_by, facet_by = NULL,
   # rather than make every caller normalise.
   error_bar = toupper(error_bar[1])
   if(!error_bar %in% c("SD", "SE", "NONE"))
-    stop("[plot_boxplot] error_bar must be one of: SD, SE, none.")
+    stop("[plotBoxplot] error_bar must be one of: SD, SE, none.")
 
   dm    = as.data.frame(de$data)
   smeta = as.data.frame(de$sample_meta)
 
   if(!compound %in% colnames(dm))
-    stop(sprintf("[plot_boxplot] '%s' is not a feature in this dataset.",
+    stop(sprintf("[plotBoxplot] '%s' is not a feature in this dataset.",
                  compound))
   group_by = .resolve_meta_col(group_by, smeta) %||%
-    stop(sprintf("[plot_boxplot] '%s' is not a sample_meta column. Present: %s.",
+    stop(sprintf("[plotBoxplot] '%s' is not a sample_meta column. Present: %s.",
                  group_by, paste(colnames(smeta), collapse = ", ")))
   facet_by       = .resolve_meta_col(facet_by, smeta)
   sample_id_head = .resolve_meta_col(sample_id_head, smeta)

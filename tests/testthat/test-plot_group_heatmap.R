@@ -1,4 +1,4 @@
-# Tests for plot_group_heatmap() - the group-mean heatmap whose opacity
+# Tests for plotGroupHeatmap() - the group-mean heatmap whose opacity
 # carries each sample's contribution to the mean it is drawn from.
 #
 # The encoding is the thing worth testing: a group whose samples all move
@@ -7,36 +7,39 @@
 # two cases are constructed explicitly rather than asserted about real data.
 
 .de_for_heatmap <- function(){
-  de <- load_dataset(system.file("extdata", "example_synthetic.RDS",
+  de <- loadDataset(system.file("extdata", "example_synthetic.RDS",
                                  package = "MRManalyzeR"))
-  subset_dataset(de, conditions = list(Sample_type = "Sample"))
+  subsetDataset(de, conditions = list(Sample_type = "Sample"))
 }
 
 test_that("returns a ggplot and honours the blocking arguments", {
   de <- .de_for_heatmap()
 
-  p <- plot_group_heatmap(de, group_by = "Treatment")
+  p <- plotGroupHeatmap(de, color_samples_by = "Treatment")
   expect_s3_class(p, "ggplot")
 
-  p2 <- plot_group_heatmap(de, group_by = "Treatment",
+  p2 <- plotGroupHeatmap(de, color_samples_by = "Treatment",
                            group_features_by = "Enzymatic_pathway")
   expect_s3_class(p2, "ggplot")
 
-  # one row per sample x feature, not one per group x feature: the whole point
-  # is that individual samples are still drawn
+  # one cell per sample x feature, not one per group x feature: the whole point
+  # is that individual samples are still drawn. The cells are the first layer;
+  # later layers are the two annotation bars.
   n_feat <- ncol(as.data.frame(de$data))
-  expect_equal(nrow(p$data), nrow(as.data.frame(de$data)) * n_feat)
+  expect_equal(nrow(p$layers[[1]]$data),
+               nrow(as.data.frame(de$data)) * n_feat)
 })
 
 test_that("alpha reaches the floor and the ceiling for the right samples", {
   de <- .de_for_heatmap()
-  p  <- plot_group_heatmap(de, group_by = "Treatment", alpha_floor = 0.25)
+  p  <- plotGroupHeatmap(de, color_samples_by = "Treatment", alpha_floor = 0.25)
+  cells <- p$layers[[1]]$data
 
-  expect_gte(min(p$data$alpha, na.rm = TRUE), 0.25)
-  expect_lte(max(p$data$alpha, na.rm = TRUE), 1)
+  expect_gte(min(cells$alpha, na.rm = TRUE), 0.25)
+  expect_lte(max(cells$alpha, na.rm = TRUE), 1)
 
   # the floor must actually be reachable, or it is not doing anything
-  expect_true(any(abs(p$data$alpha - 0.25) < 1e-8))
+  expect_true(any(abs(cells$alpha - 0.25) < 1e-8))
 })
 
 # Two-group toy panels. The scaling is across ALL samples, so which sample
@@ -64,7 +67,8 @@ test_that("the sample that sets a group's mean is opaque, the rest are not", {
   # 7x the others', so it outvotes them and A's mean comes out positive - S1 is
   # what produced it.
   de <- .toy_de(c(10, 1, 1, 1), rep(2, 4))
-  d  <- plot_group_heatmap(de, group_by = "Treatment", alpha_floor = 0.2)$data
+  d  <- plotGroupHeatmap(de, color_samples_by = "Treatment",
+                           alpha_floor = 0.2)$layers[[1]]$data
 
   a_carrier <- mean(d$alpha[d$sample == "S1"])
   a_rest    <- mean(d$alpha[d$sample %in% c("S2", "S3", "S4")])
@@ -80,7 +84,8 @@ test_that("an extreme sample outvoted by its own group fades", {
   # the extreme sample is the one opposing it. Largest raw value does not mean
   # largest contribution.
   de <- .toy_de(c(10, 0, 0, 0), rep(4, 4))
-  d  <- plot_group_heatmap(de, group_by = "Treatment", alpha_floor = 0.2)$data
+  d  <- plotGroupHeatmap(de, color_samples_by = "Treatment",
+                           alpha_floor = 0.2)$layers[[1]]$data
 
   a_extreme  <- mean(d$alpha[d$sample == "S1"])
   a_majority <- mean(d$alpha[d$sample %in% c("S2", "S3", "S4")])
@@ -100,11 +105,11 @@ test_that("degenerate input returns NULL rather than erroring", {
                                   description = "flat")
 
   # every compound is zero-variance, so nothing is left to scale
-  expect_null(plot_group_heatmap(de, group_by = "Treatment"))
+  expect_null(plotGroupHeatmap(de, color_samples_by = "Treatment"))
 })
 
 test_that("an unknown grouping column fails with a useful message", {
   de <- .de_for_heatmap()
-  expect_error(plot_group_heatmap(de, group_by = "NoSuchColumn"),
+  expect_error(plotGroupHeatmap(de, color_samples_by = "NoSuchColumn"),
                "not a sample_meta column")
 })

@@ -10,7 +10,7 @@ sm_ok = function()
              stringsAsFactors = FALSE)
 
 test_that("a well-formed pair of sheets passes", {
-  v = validate_input(fm_ok(), sm_ok())
+  v = validateInput(fm_ok(), sm_ok())
   expect_length(v$errors, 0)
   expect_length(v$warnings, 0)
 })
@@ -21,7 +21,7 @@ test_that("report_col is optional, but its absence is announced", {
   # because there is no exclusion information to honour.
   fm = fm_ok()[, c("Compound", "Processing_name")]
 
-  v = validate_input(fm, sm_ok())
+  v = validateInput(fm, sm_ok())
   expect_length(v$errors, 0)
   expect_match(v$warnings, "no 'Report' column", all = FALSE)
 
@@ -34,12 +34,12 @@ test_that("duplicate compound names are still caught without report_col", {
   fm = data.frame(Compound        = c("A", "A"),
                   Processing_name = c("a", "b"),
                   stringsAsFactors = FALSE)
-  v = validate_input(fm, sm_ok())
+  v = validateInput(fm, sm_ok())
   expect_match(v$errors, "duplicate", all = FALSE)
 })
 
 test_that("compound and processing-name columns are still required", {
   fm = data.frame(Something = c("A", "B"), stringsAsFactors = FALSE)
-  v  = validate_input(fm, sm_ok())
+  v  = validateInput(fm, sm_ok())
   expect_match(v$errors, "missing required column", all = FALSE)
 })

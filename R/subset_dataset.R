@@ -21,10 +21,10 @@
 #' sm <- data.frame(Sample_ID = c("S1", "S2", "S3"), Group = c("x", "y", "x"),
 #'                  row.names = c("S1", "S2", "S3"))
 #' de <- struct::DatasetExperiment(data = m, sample_meta = sm, variable_meta = fm)
-#' subset_dataset(de, conditions = list(Group = "x"))
+#' subsetDataset(de, conditions = list(Group = "x"))
 #' @family peak-matrix processing
 #' @export
-subset_dataset = function(de, conditions = NULL, features = NULL,
+subsetDataset = function(de, conditions = NULL, features = NULL,
                      drop_empty_features = TRUE){
 
   smeta = de$sample_meta
@@ -36,14 +36,14 @@ subset_dataset = function(de, conditions = NULL, features = NULL,
   if(length(conditions)){
     for(col in names(conditions)){
       if(!col %in% colnames(smeta))
-        stop(sprintf("subset_dataset: column '%s' not in sample_meta.", col))
+        stop(sprintf("subsetDataset: column '%s' not in sample_meta.", col))
       keep_row = keep_row & (smeta[[col]] %in% conditions[[col]])
     }
   }
 
   smeta_out = smeta[keep_row, , drop = FALSE]
   if(nrow(smeta_out) == 0)
-    warning("subset_dataset: subset produced 0 samples.")
+    warning("subsetDataset: subset produced 0 samples.")
 
   data_out  = data[keep_row, , drop = FALSE]
 
@@ -51,7 +51,7 @@ subset_dataset = function(de, conditions = NULL, features = NULL,
   if(!is.null(features)){
     miss = setdiff(features, colnames(data_out))
     if(length(miss))
-      warning("subset_dataset: features not in matrix: ",
+      warning("subsetDataset: features not in matrix: ",
               paste(head(miss, 5), collapse = ", "),
               if(length(miss) > 5) " ..." else "")
     keep_feat = intersect(features, colnames(data_out))

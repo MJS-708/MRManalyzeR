@@ -112,6 +112,8 @@ heatmap_orientation        = tolower(report_pars$heatmap$orientation %||% "sampl
 # labels so a large panel stays readable via the class colour annotation bar;
 # "hide" drops them entirely.
 heatmap_feature_labels     = tolower(report_pars$heatmap$feature_labels %||% "small")
+heatmap_style              = tolower(report_pars$heatmap$style %||% "auto")
+heatmap_alpha_floor        = as.numeric(report_pars$heatmap$alpha_floor %||% 0.6)
 # Cell edge in points. Absolute units keep cells square inside the canvas the
 # report stretches the heatmap grob into; proportional cells would not be.
 heatmap_cell_size = report_pars$heatmap$cell_size %||% "auto"
@@ -126,9 +128,24 @@ heatmap_rank_by            = tolower(report_pars$heatmap$rank_by %||% "p_adj")
 # Validators: coerce out-of-range values back to the safe default.
 .chk_scope  = function(x) if(x %in% c("global","comparisons","all")) x else "all"
 .chk_orient = function(x) if(x %in% c("samples_y","samples_x","auto")) x else "samples_y"
+.chk_style  = function(x) if(x %in% c("auto","samples","group_means")) x else "auto"
+# 'auto' picks per heatmap: with two groups every sample is legible side by
+# side, so plotHeatmap() shows strictly more; from three the cells narrow and
+# the eye stops resolving individual samples, which is where the group-mean
+# rendering with per-sample opacity is worth the unfamiliar encoding. Only ONE
+# style is ever drawn for a given heatmap - the two are alternatives, not a
+# before-and-after pair.
+# Braces are load-bearing: an unbraced `if(...) x` followed by `else` on the
+# next line parses as a complete `if` plus a stray `else`, which is a syntax
+# error at chunk level and takes the whole report down with it.
+.pick_style = function(style, n_groups){
+  if(!identical(style, "auto")) return(style)
+  if(n_groups >= 3) "group_means" else "samples"
+}
 .chk_labels = function(x) if(x %in% c("show","small","hide")) x else "small"
 heatmap_orientation    = .chk_orient(heatmap_orientation)
 heatmap_feature_labels = .chk_labels(heatmap_feature_labels)
+heatmap_style          = .chk_style(heatmap_style)
 
 # Resolve a sub-block's render settings against the root defaults — the full
 # settings list consumed by .draw_heatmap(). Every setting is overridable per
@@ -145,7 +162,9 @@ heatmap_feature_labels = .chk_labels(heatmap_feature_labels)
     orientation       = .chk_orient(tolower(block$orientation    %||% heatmap_orientation)),
     feature_labels    = .chk_labels(tolower(block$feature_labels %||% heatmap_feature_labels)),
     cell_size         = block$cell_size %||% heatmap_cell_size,
-    cell_aspect       = as.numeric(block$cell_aspect %||% heatmap_cell_aspect)
+    cell_aspect       = as.numeric(block$cell_aspect %||% heatmap_cell_aspect),
+    style             = .chk_style(tolower(block$style %||% heatmap_style)),
+    alpha_floor       = as.numeric(block$alpha_floor %||% heatmap_alpha_floor)
   )
 }
 
@@ -295,14 +314,14 @@ interactive_plots = isTRUE(report_pars$interactive_plots %||% TRUE) &&
           sample_id_head, sid, ylab, yval, global_summary_factor, gsf_val)
 }
 
-# plot_boxplot() draws one type at a time; the report shows one or both.
+# plotBoxplot() draws one type at a time; the report shows one or both.
 # Every box/bar in the report takes the package qualitative palette, so a
 # group keeps the same colour whether it is drawn here, in a heatmap
 # annotation or on the PCA.
 .compound_plots = function(de_plot, compound, group_by, facet_by){
   types = if(plot_type == "both") c("box", "bar") else plot_type
   out = lapply(types, function(ty)
-    plot_boxplot(de_plot, compound, group_by, facet_by = facet_by,
+    plotBoxplot(de_plot, compound, group_by, facet_by = facet_by,
                  type           = ty,
                  error_bar      = plot_error_bar,
                  value_label    = units,
@@ -351,9 +370,9 @@ compound_names = compoundInfo$Compound
 
 # Biological-sample subset: dropped from sections that should not see blanks/QCs
 # (global summary, global PCA). Per-comparison sections do their own subsetting
-# via subset_dataset(), so they're unaffected.
+# via subsetDataset(), so they're unaffected.
 if(!is.null(bio_filter_head) && bio_filter_head %in% colnames(metadata)){
-  bio_de = subset_dataset(importData,
+  bio_de = subsetDataset(importData,
                      conditions = setNames(list(bio_filter_levels),
                                            bio_filter_head))
   bio_meta   = bio_de$sample_meta
@@ -465,7 +484,7 @@ plus Tukey HSD post-hoc per pair. P-values are Benjamini-Hochberg adjusted
 across **all** comparisons × methods × features.
 
 > **Full p-value tables (per comparison + per method, all features) are
-> in the `stats` tab of the stats xlsx** written by `run_MRManalyzeR()`
+> in the `stats` tab of the stats xlsx** written by `runMRManalyzeR()`
 > alongside the rendered HTML reports. The same xlsx also carries the
 > `correlations` and `linear_models` tabs.
 
@@ -476,13 +495,13 @@ across **all** comparisons × methods × features.
 ```{r comp-boxplots, results="asis", eval=plot_boxplot_per_comparison && length(comparisons) > 0, fig.width=10*fig_scale, fig.height=6*fig_scale}
 # Build one long data frame across all comparisons, then facet.
 # Combine user `subset:` with the comparison level restriction in one
-# subset_dataset() call (avoid post-hoc DE mutation which trips SE's assay check).
+# subsetDataset() call (avoid post-hoc DE mutation which trips SE's assay check).
 long_rows = list()
 for(comp in comparisons){
   cond = comp$subset
   cond = if(is.null(cond)) list() else as.list(cond)
   cond[[comp$compare$factor]] = comp$compare$levels
-  de_sub = subset_dataset(importData, conditions = cond)
+  de_sub = subsetDataset(importData, conditions = cond)
   if(nrow(de_sub$sample_meta) == 0) next
 
   d = de_sub$data
@@ -781,10 +800,10 @@ tab is a **global** PCA across the biological subset, coloured by
   p
 }
 
-# Loadings are drawn by plot_loadings(); this wrapper only carries the
+# Loadings are drawn by plotLoadings(); this wrapper only carries the
 # report's component selection and colour column.
 .pca_loadings_plot = function(res_pca, vmeta, pc_x, pc_y, loadings_color_by){
-  plot_loadings(res_pca, vmeta, components = c(pc_x, pc_y),
+  plotLoadings(res_pca, vmeta, components = c(pc_x, pc_y),
                 colour_by = loadings_color_by)
 }
 
@@ -821,7 +840,7 @@ tab is a **global** PCA across the biological subset, coloured by
   rownames(M) = rn
   rownames(sm) = rn
 
-  res = run_pca(M,
+  res = runPCA(M,
                          impute        = pca_impute,
                          impute_frac   = pca_impute_frac,
                          transform     = pca_transform,
@@ -837,7 +856,7 @@ tab is a **global** PCA across the biological subset, coloured by
 
 # Global tab
 pca_global_de = if(length(pca_global_subset)){
-  subset_dataset(bio_de, conditions = as.list(pca_global_subset))
+  subsetDataset(bio_de, conditions = as.list(pca_global_subset))
 } else {
   bio_de
 }
@@ -863,7 +882,7 @@ for(comp in comparisons){
   cond = comp$subset
   cond = if(is.null(cond)) list() else as.list(cond)
   cond[[comp$compare$factor]] = comp$compare$levels
-  de_sub = subset_dataset(importData, conditions = cond)
+  de_sub = subsetDataset(importData, conditions = cond)
 
   if(nrow(de_sub$data) < 3 || ncol(de_sub$data) < 2){
     .pca_runs[[comp$name]] = list(tab_heading = comp$name, insufficient = TRUE)
@@ -971,7 +990,7 @@ if(nrow(volc_data) == 0){
       cat(sprintf("\n### %s%s {-}\n\n", comp_name,
                   if(is.na(pair_lbl)) "" else paste0(" — ", pair_lbl)))
 
-      p = plot_volcano(this, comparison = comp_name,
+      p = plotVolcano(this, comparison = comp_name,
                        pair          = if(is.na(pair_lbl)) NULL else pair_lbl,
                        use_adjusted  = volcano_use_adj,
                        sig_threshold = sig_threshold,
@@ -1026,7 +1045,7 @@ if(nrow(volc_data) == 0){
 # group_by / feature_labels: explicit overrides (default to the cfg values);
 #           the combined split-by-class heatmap overrides group_by to the
 #           subclass column.
-# Thin wrapper over plot_heatmap(): the scope/target machinery below hands us
+# Thin wrapper over plotHeatmap(): the scope/target machinery below hands us
 # a matrix plus its metadata, so rewrap them as a DatasetExperiment, map the
 # resolved cfg onto the function's arguments, and print.
 .draw_heatmap = function(M_raw, smeta, vmeta, title, cfg = heatmap_general_cfg,
@@ -1067,19 +1086,38 @@ if(nrow(volc_data) == 0){
 "); return(invisible(NULL))
   }
 
-  p = plot_heatmap(
-    de_hm,
-    title                 = title,
-    color_samples_by      = cfg$color_samples_by,
-    group_features_by     = group_by,
-    transform             = cfg$transform,
-    scale                 = cfg$scale,
-    cluster_rows          = cfg$cluster_rows,
-    cluster_within_groups = cfg$cluster_within,
-    orientation           = cfg$orientation,
-    feature_labels        = feature_labels,
-    sample_id_head        = sample_id_head,
-    cell_size             = cell)
+  # One style per heatmap, never both. cluster_rows, cluster_within_groups,
+  # orientation and cell_size are properties of the pheatmap grob with no
+  # counterpart in the ggplot renderer, and `scale` has none either - the
+  # group-mean style always scales per compound, since averaging unscaled
+  # values across compounds spanning orders of magnitude has no useful reading.
+  # Those settings are ignored under group_means rather than approximated.
+  style = .pick_style(cfg$style,
+                      length(unique(sm[[cfg$color_samples_by]])))
+  p = if(identical(style, "group_means"))
+    plotGroupHeatmap(
+      de_hm,
+      color_samples_by  = cfg$color_samples_by,
+      title             = title,
+      group_features_by = group_by,
+      transform         = cfg$transform,
+      alpha_floor       = cfg$alpha_floor,
+      feature_labels    = feature_labels,
+      sample_id_head    = sample_id_head)
+  else
+    plotHeatmap(
+      de_hm,
+      title                 = title,
+      color_samples_by      = cfg$color_samples_by,
+      group_features_by     = group_by,
+      transform             = cfg$transform,
+      scale                 = cfg$scale,
+      cluster_rows          = cfg$cluster_rows,
+      cluster_within_groups = cfg$cluster_within,
+      orientation           = cfg$orientation,
+      feature_labels        = feature_labels,
+      sample_id_head        = sample_id_head,
+      cell_size             = cell)
 
   if(is.null(p)){
     cat("_Insufficient data for heatmap._
@@ -1101,7 +1139,7 @@ if(nrow(volc_data) == 0){
     cmps = Filter(Negate(is.null), lapply(comparisons, function(comp){
       cond = if(is.null(comp$subset)) list() else as.list(comp$subset)
       cond[[comp$compare$factor]] = comp$compare$levels
-      de = subset_dataset(importData, conditions = cond)
+      de = subsetDataset(importData, conditions = cond)
       if(nrow(de$sample_meta) == 0) return(NULL)
       list(label = comp$name, M = de$data, smeta = de$sample_meta,
            vmeta = de$variable_meta, comp = comp)
@@ -1415,7 +1453,7 @@ for(ratio_cfg in ion_ratios_list){
     next
   }
 
-  # Values come from run_stats()$ion_ratios, so the plots and the ion_ratios
+  # Values come from runStats()$ion_ratios, so the plots and the ion_ratios
   # sheet of the stats workbook are the same numbers.
   .ir_all  = stats_tables$ion_ratios
   .ir_this = .ir_all[.ir_all$ratio == ratio_lbl & is.na(.ir_all$comparison), ,
@@ -1433,7 +1471,7 @@ for(ratio_cfg in ion_ratios_list){
       if(!isTRUE(comp$enabled %||% TRUE)) next
       cond = if(is.null(comp$subset)) list() else as.list(comp$subset)
       cond[[comp$compare$factor]] = comp$compare$levels
-      de_sub = tryCatch(subset_dataset(importData, conditions = cond),
+      de_sub = tryCatch(subsetDataset(importData, conditions = cond),
                         error = function(e) NULL)
       if(is.null(de_sub) || nrow(de_sub$sample_meta) == 0) next
 
@@ -1500,10 +1538,10 @@ for(ratio_cfg in ion_ratios_list){
 
       # The Wilcoxon / Kruskal annotation is report presentation, so it is
       # layered on top of the returned plot rather than baked into
-      # plot_boxplot().
+      # plotBoxplot().
       plots_ir = lapply(if(plot_type == "both") c("box", "bar") else plot_type,
         function(ty)
-          plot_boxplot(.ir_de, "ratio", ".group", facet_by = ".comparison",
+          plotBoxplot(.ir_de, "ratio", ".group", facet_by = ".comparison",
                        type           = ty,
                        error_bar      = plot_error_bar,
                        value_label    = "ratio",
@@ -1564,7 +1602,7 @@ for(ratio_cfg in ion_ratios_list){
 
       plots_f = lapply(if(plot_type == "both") c("box", "bar") else plot_type,
         function(ty)
-          plot_boxplot(.irf_de, "ratio", ".group",
+          plotBoxplot(.irf_de, "ratio", ".group",
                        type           = ty,
                        error_bar      = plot_error_bar,
                        value_label    = "ratio",
@@ -1616,7 +1654,7 @@ for(i in seq_len(nrow(combos))){
 
   cat(sprintf("\n### %s — %s — %s {-}\n\n", cn, sb, mt))
 
-  p = plot_correlation(cdf, if(exists("bio_de")) bio_de else NULL,
+  p = plotCorrelation(cdf, if(exists("bio_de")) bio_de else NULL,
                        name        = cn,
                        subset      = sb,
                        method      = mt,

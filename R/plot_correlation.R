@@ -13,11 +13,11 @@
 #' Features are ordered by their `group_by` class into contiguous blocks and
 #' clustered within each block, so a class stays together and reads as a unit;
 #' with no `group_by`, clustering is global. A coloured strip along each axis
-#' carries the class, using the same palette as [plot_loadings()] and the
-#' feature annotation in [plot_heatmap()] - so a class is one colour everywhere
+#' carries the class, using the same palette as [plotLoadings()] and the
+#' feature annotation in [plotHeatmap()] - so a class is one colour everywhere
 #' in the report.
 #'
-#' @param correlations The `correlations` data frame from [run_stats()], or the
+#' @param correlations The `correlations` data frame from [runStats()], or the
 #'   whole list. Long format: `feature_a`, `feature_b`, `estimate`, plus
 #'   `correlation` / `subset` / `method` identifying each run.
 #' @param variable_meta Feature metadata, or a `DatasetExperiment` to take it
@@ -31,16 +31,16 @@
 #'   features, where the text is unreadable anyway.
 #' @return A `ggplot`, or `NULL` if the selection is empty.
 #' @examples
-#' de <- load_dataset(system.file("extdata", "example_synthetic.RDS",
+#' de <- loadDataset(system.file("extdata", "example_synthetic.RDS",
 #'                                package = "MRManalyzeR"))
-#' de <- subset_dataset(de, conditions = list(Sample_type = "Sample"))
+#' de <- subsetDataset(de, conditions = list(Sample_type = "Sample"))
 #' params <- list(correlations = list(enabled = TRUE, entries = list(
 #'   list(name = "pairs", methods = "spearman", subsets = list(list())))))
-#' st <- run_stats(de, params)
-#' plot_correlation(st, de, group_by = "Enzymatic_pathway")
+#' st <- runStats(de, params)
+#' plotCorrelation(st, de, group_by = "Enzymatic_pathway")
 #' @family stats
 #' @export
-plot_correlation = function(correlations, variable_meta = NULL,
+plotCorrelation = function(correlations, variable_meta = NULL,
                             name = NULL, subset = NULL, method = NULL,
                             group_by    = NULL,
                             cluster     = TRUE,
@@ -56,7 +56,7 @@ plot_correlation = function(correlations, variable_meta = NULL,
     if(is.null(val)){
       u = unique(df[[col]])
       if(length(u) > 1)
-        stop(sprintf("[plot_correlation] several values of '%s'; name one: %s",
+        stop(sprintf("[plotCorrelation] several values of '%s'; name one: %s",
                      col, paste(u, collapse = ", ")))
       return(df)
     }

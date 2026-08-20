@@ -3,7 +3,7 @@
 #' Plots the sample quantiles of one compound against theoretical normal
 #' quantiles, with the reference line, and reports the Shapiro-Wilk statistic
 #' in the title. Points falling along the line mean the parametric tests in
-#' [run_stats()] are on safe ground for that compound; a curve means they are
+#' [runStats()] are on safe ground for that compound; a curve means they are
 #' not, and the Wilcoxon or Kruskal-Wallis result reported alongside is the one
 #' to trust.
 #'
@@ -26,12 +26,12 @@
 #'   the plot is an empty panel whose title says so, so a report loop does not
 #'   have to special-case sparse compounds.
 #' @examples
-#' de <- load_dataset(system.file("extdata", "example_synthetic.RDS",
+#' de <- loadDataset(system.file("extdata", "example_synthetic.RDS",
 #'                                package = "MRManalyzeR"))
-#' plot_qq(de, "Analyte_02", transform = "log2", levels = "Sample")
+#' plotQQ(de, "Analyte_02", transform = "log2", levels = "Sample")
 #' @family QC check
 #' @export
-plot_qq = function(de, compound, transform = c("none", "log2", "sqrt"),
+plotQQ = function(de, compound, transform = c("none", "log2", "sqrt"),
                    sample_type_head = "Sample_type",
                    levels           = NULL,
                    value_label      = "value"){
@@ -40,7 +40,7 @@ plot_qq = function(de, compound, transform = c("none", "log2", "sqrt"),
   dm    = as.data.frame(de$data)
   smeta = as.data.frame(de$sample_meta)
   if(!compound %in% colnames(dm))
-    stop(sprintf("[plot_qq] '%s' is not a feature in this dataset.", compound))
+    stop(sprintf("[plotQQ] '%s' is not a feature in this dataset.", compound))
 
   keep = if(is.null(levels) || !sample_type_head %in% colnames(smeta))
     rep(TRUE, nrow(dm)) else smeta[[sample_type_head]] %in% levels

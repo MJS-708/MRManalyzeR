@@ -19,7 +19,7 @@
 #' [make.names()], which would rewrite the `/` to a `.` anyway.
 #'
 #' Calling it twice is harmless - the columns are overwritten, not duplicated.
-#' [run_MRManalyzeR()] applies it to every run, so a dataset read back from the
+#' [runMRManalyzeR()] applies it to every run, so a dataset read back from the
 #' output RDS already carries these columns.
 #'
 #' @param de A `struct::DatasetExperiment`.
@@ -30,14 +30,14 @@
 #'   `variable_meta`. `CV_QC` is `NA` when the run holds fewer than two QC
 #'   injections.
 #' @examples
-#' de <- load_dataset(system.file("extdata", "example_synthetic.RDS",
+#' de <- loadDataset(system.file("extdata", "example_synthetic.RDS",
 #'                                package = "MRManalyzeR"))
-#' de <- add_cv_metrics(de, qc_label = "QC")
+#' de <- addCVMetrics(de, qc_label = "QC")
 #' head(as.data.frame(de$variable_meta)[, c("Compound", "CV_QC",
 #'                                          "CV_sample", "CV_sample_vs_QC")])
 #' @family QC check
 #' @export
-add_cv_metrics = function(de, sample_type_head = "Sample_type",
+addCVMetrics = function(de, sample_type_head = "Sample_type",
                           qc_label = "QC", sample_labels = "Sample"){
   dm    = as.data.frame(de$data)          # samples x features
   smeta = as.data.frame(de$sample_meta)

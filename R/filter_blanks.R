@@ -38,11 +38,11 @@
 #'     row.names = c("S1", "S2", "B1", "B2")),
 #'   variable_meta = data.frame(Compound = c("PGE2", "PGD2"),
 #'                              row.names = c("PGE2", "PGD2")))
-#' out <- filter_blanks(de, blank_filter = 3)
+#' out <- filterBlanks(de, blank_filter = 3)
 #' out$data
 #' as.data.frame(out$variable_meta)[, c("blank_threshold", "n_masked_blank")]
 #' @export
-filter_blanks = function(de, blank_filter, blank_head = "Sample_type",
+filterBlanks = function(de, blank_filter, blank_head = "Sample_type",
                          blank_name = "Blank",
                          summary = c("mean", "median"),
                          min_blanks = 2,
@@ -56,7 +56,7 @@ filter_blanks = function(de, blank_filter, blank_head = "Sample_type",
   vm    = as.data.frame(de$variable_meta)
 
   if(!blank_head %in% colnames(smeta))
-    stop(sprintf("[filter_blanks] '%s' is not a sample_meta column.",
+    stop(sprintf("[filterBlanks] '%s' is not a sample_meta column.",
                  blank_head))
 
   blank_samples = rownames(smeta)[smeta[[blank_head]] %in% blank_name]
@@ -65,7 +65,7 @@ filter_blanks = function(de, blank_filter, blank_head = "Sample_type",
 
   if(n_blank < min_blanks){
     msg = sprintf(
-      "[filter_blanks] found %d blank injection(s) (%s in {%s}); %d required.",
+      "[filterBlanks] found %d blank injection(s) (%s in {%s}); %d required.",
       n_blank, blank_head, paste(blank_name, collapse = ", "), min_blanks)
     if(missing_blanks == "error") stop(msg)
     if(missing_blanks == "skip"){

@@ -6,7 +6,7 @@
 #' tiny but exquisitely reproducible shift usually is not interesting either.
 #' The compounds worth attention sit in the upper corners.
 #'
-#' Rows are taken from the `stats` table returned by [run_stats()], so the plot
+#' Rows are taken from the `stats` table returned by [runStats()], so the plot
 #' and the `stats` sheet of the output xlsx are the same numbers. Only rows
 #' carrying a fold change are eligible, which excludes the global tests
 #' (`anova`, `kruskal`) - they ask whether *any* group differs and have no
@@ -18,7 +18,7 @@
 #' most significant are kept, since a volcano labelled with eighty compounds
 #' communicates nothing.
 #'
-#' @param stats The `stats` data frame from [run_stats()], or the whole list.
+#' @param stats The `stats` data frame from [runStats()], or the whole list.
 #' @param comparison Name of the comparison to plot. `NULL` uses the only one
 #'   present, and errors if the table holds more than one.
 #' @param pair For post-hoc rows, the group pair as `"A vs B"`. `NULL` uses the
@@ -29,18 +29,18 @@
 #' @param top_n_label Maximum number of significant features to label.
 #' @return A `ggplot`, or `NULL` when the comparison has no plottable rows.
 #' @examples
-#' de <- load_dataset(system.file("extdata", "example_synthetic.RDS",
+#' de <- loadDataset(system.file("extdata", "example_synthetic.RDS",
 #'                                package = "MRManalyzeR"))
-#' de <- subset_dataset(de, conditions = list(Sample_type = "Sample"))
+#' de <- subsetDataset(de, conditions = list(Sample_type = "Sample"))
 #' params <- list(comparisons = list(enabled = TRUE, entries = list(
 #'   list(name = "PBS_vs_HDM", method = "welch",
 #'        compare = list(factor = "Treatment",
 #'                       levels = c("PBS", "HDM"))))))
-#' st <- run_stats(de, params)
-#' plot_volcano(st, "PBS_vs_HDM")
+#' st <- runStats(de, params)
+#' plotVolcano(st, "PBS_vs_HDM")
 #' @family stats
 #' @export
-plot_volcano = function(stats, comparison = NULL, pair = NULL,
+plotVolcano = function(stats, comparison = NULL, pair = NULL,
                         use_adjusted  = FALSE,
                         sig_threshold = 0.05,
                         top_n_label   = 10){
@@ -59,7 +59,7 @@ plot_volcano = function(stats, comparison = NULL, pair = NULL,
   if(is.null(comparison)){
     comps = unique(df$comparison)
     if(length(comps) > 1)
-      stop("[plot_volcano] several comparisons present; name one: ",
+      stop("[plotVolcano] several comparisons present; name one: ",
            paste(comps, collapse = ", "))
     comparison = comps[1]
   }

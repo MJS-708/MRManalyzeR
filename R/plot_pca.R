@@ -1,6 +1,6 @@
 #' Plot PCA scores, coloured by a sample-metadata column
 #'
-#' Draws the scores from [run_pca()] with the percentage of variance explained
+#' Draws the scores from [runPCA()] with the percentage of variance explained
 #' on each axis. The colouring is the whole point: the same scores answer a
 #' different question depending on what you colour them by. Colour by sample
 #' type and the question is whether the QC injections cluster tightly in the
@@ -17,7 +17,7 @@
 #' explicitly to override the automatic choice - useful when a column is stored
 #' as character but is really a sequence.
 #'
-#' @param pca The list returned by [run_pca()].
+#' @param pca The list returned by [runPCA()].
 #' @param sample_meta Sample metadata, or a `DatasetExperiment` to take it
 #'   from. Rows are matched to the PCA scores by name, so samples dropped by
 #'   `sample_na_max` do not have to be removed by the caller.
@@ -37,13 +37,13 @@
 #' @return A `ggplot`, or `NULL` if the PCA could not be fit (`pca$pr` is
 #'   `NULL`), which lets a report skip the section without erroring.
 #' @examples
-#' de  <- load_dataset(system.file("extdata", "example_synthetic.RDS",
+#' de  <- loadDataset(system.file("extdata", "example_synthetic.RDS",
 #'                                 package = "MRManalyzeR"))
-#' pca <- run_pca(de, transform = "log2")
-#' plot_pca(pca, de, colour_by = "Chrom_Batch")
+#' pca <- runPCA(de, transform = "log2")
+#' plotPCA(pca, de, colour_by = "Chrom_Batch")
 #' @family QC check
 #' @export
-plot_pca = function(pca, sample_meta, colour_by,
+plotPCA = function(pca, sample_meta, colour_by,
                     components    = c(1, 2),
                     label         = c("none", "all", "outliers"),
                     label_factor  = NULL,
@@ -63,13 +63,13 @@ plot_pca = function(pca, sample_meta, colour_by,
   x = pca$pr$x
   pc = as.integer(components)[c(1L, 2L)]
   if(any(pc > ncol(x)))
-    stop(sprintf("[plot_pca] requested component %d but the fit has %d.",
+    stop(sprintf("[plotPCA] requested component %d but the fit has %d.",
                  max(pc), ncol(x)))
 
-  # Re-align: run_pca() may drop samples via sample_na_max.
+  # Re-align: runPCA() may drop samples via sample_na_max.
   smeta = smeta[rownames(x), , drop = FALSE]
   colour_by = .resolve_meta_col(colour_by, smeta) %||%
-    stop(sprintf("[plot_pca] '%s' is not a sample_meta column. Present: %s.",
+    stop(sprintf("[plotPCA] '%s' is not a sample_meta column. Present: %s.",
                  colour_by, paste(colnames(smeta), collapse = ", ")))
   label_factor = .resolve_meta_col(label_factor, smeta)
 

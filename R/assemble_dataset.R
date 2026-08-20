@@ -19,10 +19,10 @@
 #'                  row.names = c("A", "B"))
 #' sm <- data.frame(Name = c("S1", "S2", "S3"), Group = c("x", "y", "x"),
 #'                  row.names = c("S1", "S2", "S3"))
-#' assemble_dataset(m, fm, sm)
+#' assembleDataset(m, fm, sm)
 #' @family data parse
 #' @export
-assemble_dataset = function(x, feature_meta, sample_meta, name_col = "Name"){
+assembleDataset = function(x, feature_meta, sample_meta, name_col = "Name"){
   # Feature side: keep only feature_meta rows whose Compound is in the matrix,
   # in matrix-column order, so variable_meta rownames match assay colnames.
   fdata_output = feature_meta %>%
@@ -61,7 +61,7 @@ assemble_dataset = function(x, feature_meta, sample_meta, name_col = "Name"){
   chg  = from != to
   if(any(chg))
     message(sprintf(
-      "[assemble_dataset] %s column(s) renamed for storage: %s. Use the new name in the config.",
+      "[assembleDataset] %s column(s) renamed for storage: %s. Use the new name in the config.",
       what, paste(sprintf("'%s' -> '%s'", from[chg], to[chg]),
                   collapse = ", ")))
 }

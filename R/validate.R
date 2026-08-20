@@ -61,10 +61,10 @@ print.mrm_validation = function(x, ...){
 #' @param feature_meta Feature metadata sheet.
 #' @param sample_meta Sample metadata sheet.
 #' @param data Optional wide matrix (samples x compounds), e.g. from
-#'   [read_targetlynx()]. Cross-checks between data and metadata are skipped
+#'   [readTargetLynx()]. Cross-checks between data and metadata are skipped
 #'   when absent.
 #' @param name_col,compound_col,processing_name_col,report_col,include_col
-#'   Column names, matching the arguments of [process_dataset()].
+#'   Column names, matching the arguments of [processDataset()].
 #' @return An `mrm_validation` object with `errors`, `warnings` and a `summary`
 #'   data frame of every check.
 #' @examples
@@ -72,10 +72,10 @@ print.mrm_validation = function(x, ...){
 #'                     package = "MRManalyzeR")
 #' fdata <- openxlsx::read.xlsx(xlsx, sheet = "feature_metadata")
 #' meta  <- openxlsx::read.xlsx(xlsx, sheet = "sample_metadata")
-#' validate_input(fdata, meta)
+#' validateInput(fdata, meta)
 #' @family data parse
 #' @export
-validate_input = function(feature_meta, sample_meta, data = NULL,
+validateInput = function(feature_meta, sample_meta, data = NULL,
                           name_col            = "Name",
                           compound_col        = "Compound",
                           processing_name_col = "Processing_name",
@@ -193,13 +193,13 @@ validate_input = function(feature_meta, sample_meta, data = NULL,
 #' @param config A config list, or a path to a YAML file.
 #' @return An `mrm_validation` object.
 #' @examples
-#' validate_config(system.file("extdata", "example_config.yml",
+#' validateConfig(system.file("extdata", "example_config.yml",
 #'                             package = "MRManalyzeR"))
 #' @family data parse
 #' @export
-validate_config = function(config){
+validateConfig = function(config){
 
-  if(is.character(config) && length(config) == 1L) config = load_config(config)
+  if(is.character(config) && length(config) == 1L) config = loadConfig(config)
   chk = .chk_new()
   prj = config$project %||% config
 
@@ -278,12 +278,12 @@ validate_config = function(config){
 #'   worth running.
 #' @return An `mrm_validation` object.
 #' @examples
-#' de <- load_dataset(system.file("extdata", "example_synthetic.RDS",
+#' de <- loadDataset(system.file("extdata", "example_synthetic.RDS",
 #'                                package = "MRManalyzeR"))
-#' validate_design(de)
+#' validateDesign(de)
 #' @family data parse
 #' @export
-validate_design = function(de, config = NULL,
+validateDesign = function(de, config = NULL,
                            sample_type_head = "Sample_type",
                            qc_label   = "QC",
                            blank_name = "Blank",
@@ -334,7 +334,7 @@ validate_design = function(de, config = NULL,
 
   # --- confounding, comparisons, normalisation ------------------------------
   if(!is.null(config)){
-    if(is.character(config) && length(config) == 1L) config = load_config(config)
+    if(is.character(config) && length(config) == 1L) config = loadConfig(config)
     prj = config$project %||% config
     pmp = prj$PeakMatrixProcessing
     sp  = prj$stats_report %||% prj$MVA_report

@@ -3,7 +3,7 @@
 #' Used to merge separately-acquired LC-MS panels (e.g. GOM, cysLT, SPM) that
 #' share a common set of biological samples. Inputs can be either `.RDS`
 #' files (containing a `struct::DatasetExperiment`) or `.xlsx` workbooks
-#' produced by [`run_MRManalyzeR()`] - see [`load_dataset()`].
+#' produced by [`runMRManalyzeR()`] - see [`loadDataset()`].
 #'
 #' Defaults:
 #' \itemize{
@@ -59,10 +59,10 @@
 #' d <- tempfile("comb_"); dir.create(d)
 #' p1 <- file.path(d, "a.RDS"); saveRDS(mk(c("A", "B")), p1)
 #' p2 <- file.path(d, "c.RDS"); saveRDS(mk(c("C", "D")), p2)
-#' combine_datasets(c(A = p1, B = p2))
+#' combineDatasets(c(A = p1, B = p2))
 #' @family data parse
 #' @export
-combine_datasets = function(paths,
+combineDatasets = function(paths,
                             feature_meta_cols   = NULL,
                             sample_meta_cols    = NULL,
                             feature_meta_rename = NULL,
@@ -81,7 +81,7 @@ combine_datasets = function(paths,
   if(!identical(prefix_features, FALSE) &&
      !identical(prefix_features, TRUE)  &&
      !identical(prefix_features, "auto"))
-    stop("[combine_datasets] prefix_features must be FALSE, TRUE, or \"auto\".")
+    stop("[combineDatasets] prefix_features must be FALSE, TRUE, or \"auto\".")
 
   # Tags used for feature prefixing + lookup in the per-dataset config lists.
   tags = if(!is.null(names(paths)) && all(nzchar(names(paths))))
@@ -97,10 +97,10 @@ combine_datasets = function(paths,
   for(i in seq_along(paths)){
     p   = paths[i]
     tag = tags[i]
-    de  = load_dataset(p, sample_id_col = sample_id_col)
+    de  = loadDataset(p, sample_id_col = sample_id_col)
 
     if(!sample_id_col %in% colnames(de$sample_meta))
-      stop(sprintf("[combine_datasets] '%s' lacks column '%s' in sample_meta.",
+      stop(sprintf("[combineDatasets] '%s' lacks column '%s' in sample_meta.",
                    p, sample_id_col))
 
     # Extract as plain data.frames - S4 accessors return copies anyway, and
@@ -126,7 +126,7 @@ combine_datasets = function(paths,
         rownames(vmeta) = cn
       } else {
         stop(sprintf(
-          "[combine_datasets] '%s': cannot align variable_meta (%d rows) to data (%d cols). Compound column missing or values don't match data colnames.",
+          "[combineDatasets] '%s': cannot align variable_meta (%d rows) to data (%d cols). Compound column missing or values don't match data colnames.",
           tag, nrow(vmeta), ncol(dat)))
       }
     }
@@ -150,7 +150,7 @@ combine_datasets = function(paths,
       # the other.
       if(identical(duplicate_samples, "error"))
         stop(sprintf(
-          "[combine_datasets] %s Set duplicate_samples to 'first', 'mean' or 'median' to combine them, or mark re-injections Include = 'NO' before processing.",
+          "[combineDatasets] %s Set duplicate_samples to 'first', 'mean' or 'median' to combine them, or mark re-injections Include = 'NO' before processing.",
           msg))
 
       message(sprintf("[combine] %s Resolving with '%s'.", msg,
@@ -187,7 +187,7 @@ combine_datasets = function(paths,
       sid_tmp = sid_tmp[keep]
       recoded = unname(ifelse(sid_tmp %in% names(qm), qm[sid_tmp], sid_tmp))
       if(anyDuplicated(recoded))
-        stop("[combine_datasets] QC remap produced duplicate Sample_IDs: ",
+        stop("[combineDatasets] QC remap produced duplicate Sample_IDs: ",
              paste(unique(recoded[duplicated(recoded)]), collapse = ", "))
       smeta[[sample_id_col]] = recoded
       rownames(smeta)        = recoded
@@ -201,7 +201,7 @@ combine_datasets = function(paths,
     # 4. Canonicalise sample rownames to the chosen ID column
     sid = as.character(smeta[[sample_id_col]])
     if(anyNA(sid) || any(!nzchar(sid)) || anyDuplicated(sid))
-      stop(sprintf("[combine_datasets] '%s' has missing/blank/duplicate %s.",
+      stop(sprintf("[combineDatasets] '%s' has missing/blank/duplicate %s.",
                    p, sample_id_col))
     rownames(smeta) = sid
     rownames(dat)   = sid
@@ -242,10 +242,10 @@ combine_datasets = function(paths,
   if(is.null(sample_meta_cols))
     sample_meta_cols  = Reduce(intersect, lapply(smetas, colnames))
   if(length(feature_meta_cols) == 0)
-    stop("[combine_datasets] No common variable_meta columns across inputs ",
+    stop("[combineDatasets] No common variable_meta columns across inputs ",
          "(and no `feature_meta_cols` provided).")
   if(length(sample_meta_cols) == 0)
-    stop("[combine_datasets] No common sample_meta columns across inputs ",
+    stop("[combineDatasets] No common sample_meta columns across inputs ",
          "(and no `sample_meta_cols` provided).")
   if(!sample_id_col %in% sample_meta_cols)
     sample_meta_cols = c(sample_id_col, sample_meta_cols)
@@ -256,7 +256,7 @@ combine_datasets = function(paths,
   # 7. Intersect samples by Sample_ID
   common = Reduce(intersect, lapply(dats, rownames))
   if(length(common) == 0)
-    stop("[combine_datasets] No samples in common across the input datasets.")
+    stop("[combineDatasets] No samples in common across the input datasets.")
   if(!is.null(drop_samples))
     common = setdiff(common, drop_samples)
 
@@ -284,13 +284,13 @@ combine_datasets = function(paths,
               rownames(vmeta_combined)[i])
     }, character(1))
     stop(sprintf(
-      "[combine_datasets] Internal alignment failure: %d feature(s) have mismatching colnames(data) vs rownames(variable_meta). This usually indicates the xlsx 'matrix' and 'feature_metadata' sheets disagree on names/order for one of the inputs. Mismatches:\n%s%s",
+      "[combineDatasets] Internal alignment failure: %d feature(s) have mismatching colnames(data) vs rownames(variable_meta). This usually indicates the xlsx 'matrix' and 'feature_metadata' sheets disagree on names/order for one of the inputs. Mismatches:\n%s%s",
       length(bad), paste(lines, collapse = "\n"),
       if(length(bad) > 10) sprintf("\n  ... (%d more)", length(bad) - 10) else ""))
   }
   if(anyDuplicated(colnames(data_combined))){
     dups = unique(colnames(data_combined)[duplicated(colnames(data_combined))])
-    stop("[combine_datasets] Combined data has duplicate feature names: ",
+    stop("[combineDatasets] Combined data has duplicate feature names: ",
          paste(head(dups, 10), collapse = ", "),
          if(length(dups) > 10) sprintf(" ... (%d total)", length(dups)) else "",
          ". Use prefix_features=TRUE (or \"auto\") to disambiguate.")

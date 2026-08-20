@@ -1,13 +1,13 @@
 #' Load a `DatasetExperiment` from `.RDS` or `.xlsx`
 #'
-#' Used by [`combine_datasets()`] so the combine workflow can mix RDS and
+#' Used by [`combineDatasets()`] so the combine workflow can mix RDS and
 #' xlsx inputs (xlsx loading reconstructs a `DatasetExperiment` from the
 #' standard sheets `feature_metadata`, `sample_metadata`, `matrix` written
-#' by [`run_MRManalyzeR()`]).
+#' by [`runMRManalyzeR()`]).
 #'
 #' @param path Path to either an `.RDS` containing a
 #'   `struct::DatasetExperiment`, or an `.xlsx` produced by
-#'   [`run_MRManalyzeR()`] (with `feature_metadata`, `sample_metadata`,
+#'   [`runMRManalyzeR()`] (with `feature_metadata`, `sample_metadata`,
 #'   `matrix` tabs).
 #' @param sample_id_col Column in `sample_metadata` used as the row-name
 #'   key when loading from xlsx. Default `"Sample_ID"`.
@@ -21,12 +21,12 @@
 #'   variable_meta = data.frame(Compound = c("A", "B"),
 #'                              row.names = c("A", "B")))
 #' f <- tempfile(fileext = ".RDS"); saveRDS(de, f)
-#' load_dataset(f)
+#' loadDataset(f)
 #' @family data parse
 #' @export
-load_dataset = function(path, sample_id_col = "Sample_ID"){
+loadDataset = function(path, sample_id_col = "Sample_ID"){
 
-  if(!file.exists(path)) stop("[load_dataset] file not found: ", path)
+  if(!file.exists(path)) stop("[loadDataset] file not found: ", path)
 
   ext = tolower(tools::file_ext(path))
 
@@ -43,11 +43,11 @@ load_dataset = function(path, sample_id_col = "Sample_ID"){
     if(!is.null(dat_cn) && !identical(as.character(rownames(vm)),
                                       as.character(dat_cn))){
       if(!"Compound" %in% colnames(vm))
-        stop(sprintf("[load_dataset] %s: variable_meta has no Compound column to align on.", path))
+        stop(sprintf("[loadDataset] %s: variable_meta has no Compound column to align on.", path))
       missing_in_vm = setdiff(dat_cn, as.character(vm$Compound))
       if(length(missing_in_vm)){
         stop(sprintf(
-          "[load_dataset] %s: %d data column(s) have no matching Compound row in variable_meta (e.g. %s). The RDS appears to have drifted between data and variable_meta - re-export from the source xlsx.",
+          "[loadDataset] %s: %d data column(s) have no matching Compound row in variable_meta (e.g. %s). The RDS appears to have drifted between data and variable_meta - re-export from the source xlsx.",
           path, length(missing_in_vm),
           paste(head(missing_in_vm, 5), collapse = ", ")))
       }
@@ -68,7 +68,7 @@ load_dataset = function(path, sample_id_col = "Sample_ID"){
     need   = c("feature_metadata", "sample_metadata", "matrix")
     miss   = setdiff(need, sheets)
     if(length(miss))
-      stop(sprintf("[load_dataset] %s is missing required sheet(s): %s",
+      stop(sprintf("[loadDataset] %s is missing required sheet(s): %s",
                    path, paste(miss, collapse = ", ")))
 
     fmeta = openxlsx::read.xlsx(path, sheet = "feature_metadata")
@@ -77,7 +77,7 @@ load_dataset = function(path, sample_id_col = "Sample_ID"){
     M     = as.matrix(M)
 
     if(!sample_id_col %in% colnames(smeta))
-      stop(sprintf("[load_dataset] %s: sample_metadata lacks column '%s'.",
+      stop(sprintf("[loadDataset] %s: sample_metadata lacks column '%s'.",
                    path, sample_id_col))
 
     # Align matrix rows to sample_meta in declared order, keyed by sample_id_col.
@@ -89,7 +89,7 @@ load_dataset = function(path, sample_id_col = "Sample_ID"){
       rownames(M) = sid
     } else {
       stop(sprintf(
-        "[load_dataset] %s: cannot align matrix rows to sample_metadata (%d vs %d).",
+        "[loadDataset] %s: cannot align matrix rows to sample_metadata (%d vs %d).",
         path, nrow(M), nrow(smeta)))
     }
     rownames(smeta) = sid
@@ -106,7 +106,7 @@ load_dataset = function(path, sample_id_col = "Sample_ID"){
     } else {
       missing_in_fmeta = setdiff(colnames(M), rownames(fmeta))
       stop(sprintf(
-        "[load_dataset] %s: %d matrix column(s) have no matching row in feature_metadata$Compound (e.g. %s). Fix the xlsx so matrix headers and feature_metadata$Compound use identical names.",
+        "[loadDataset] %s: %d matrix column(s) have no matching row in feature_metadata$Compound (e.g. %s). Fix the xlsx so matrix headers and feature_metadata$Compound use identical names.",
         path, length(missing_in_fmeta),
         paste(head(missing_in_fmeta, 5), collapse = ", ")))
     }
@@ -119,5 +119,5 @@ load_dataset = function(path, sample_id_col = "Sample_ID"){
     ))
   }
 
-  stop("[load_dataset] unsupported extension '.", ext, "' for: ", path)
+  stop("[loadDataset] unsupported extension '.", ext, "' for: ", path)
 }

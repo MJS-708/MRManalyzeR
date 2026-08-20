@@ -39,18 +39,18 @@
 #'                  Chrom_Batch = c("b1", "b1", "b2", "b2"),
 #'                  row.names = c("S1", "S2", "S3", "S4"))
 #' de <- struct::DatasetExperiment(data = m, sample_meta = sm, variable_meta = fm)
-#' correct_batch(de, qc_label = "Sample", factor_name = "Sample_type",
+#' correctBatch(de, qc_label = "Sample", factor_name = "Sample_type",
 #'               batch_head = "Chrom_Batch")
 #' @family peak-matrix processing
 #' @export
-correct_batch = function(de, qc_label = "QC", factor_name = "Sample_type",
+correctBatch = function(de, qc_label = "QC", factor_name = "Sample_type",
                          batch_head = "Chrom_Batch",
                          check_factor = NULL, min_ref = 2){
 
   smeta = as.data.frame(de$sample_meta)
   for(h in c(factor_name, batch_head)){
     if(!h %in% colnames(smeta))
-      stop(sprintf("[correct_batch] '%s' is not a sample_meta column.", h))
+      stop(sprintf("[correctBatch] '%s' is not a sample_meta column.", h))
   }
 
   is_ref = smeta[[factor_name]] %in% qc_label
@@ -58,7 +58,7 @@ correct_batch = function(de, qc_label = "QC", factor_name = "Sample_type",
 
   if(!any(is_ref))
     stop(sprintf(
-      "[correct_batch] no reference samples: no row has %s in {%s}.",
+      "[correctBatch] no reference samples: no row has %s in {%s}.",
       factor_name, paste(qc_label, collapse = ", ")))
 
   # Every batch needs enough reference samples for its median to mean
@@ -67,14 +67,14 @@ correct_batch = function(de, qc_label = "QC", factor_name = "Sample_type",
   thin = setdiff(unique(batch), names(per_batch)[per_batch >= min_ref])
   if(length(thin))
     stop(sprintf(
-      "[correct_batch] batch(es) %s have fewer than %d reference samples (%s in {%s}). Add reference samples, lower min_ref, or use a reference present in every batch.",
+      "[correctBatch] batch(es) %s have fewer than %d reference samples (%s in {%s}). Add reference samples, lower min_ref, or use a reference present in every batch.",
       paste(sprintf("'%s'", thin), collapse = ", "), min_ref,
       factor_name, paste(qc_label, collapse = ", ")))
 
   # Is the "biology is the same on average in each batch" assumption safe?
   if(!is.null(check_factor)){
     if(!check_factor %in% colnames(smeta)){
-      warning(sprintf("[correct_batch] check_factor '%s' is not a sample_meta column; confounding check skipped.",
+      warning(sprintf("[correctBatch] check_factor '%s' is not a sample_meta column; confounding check skipped.",
                       check_factor))
     } else {
       lv = table(batch[is_ref],
@@ -82,7 +82,7 @@ correct_batch = function(de, qc_label = "QC", factor_name = "Sample_type",
       n_lv = rowSums(lv > 0)
       if(ncol(lv) > 1 && any(n_lv < 2))
         warning(sprintf(
-          "[correct_batch] batch(es) %s contain only one level of '%s' among the reference samples, so batch is confounded with it. Median-ratio correction will remove that difference along with the technical shift. Use pooled QCs as the reference if you have them.",
+          "[correctBatch] batch(es) %s contain only one level of '%s' among the reference samples, so batch is confounded with it. Median-ratio correction will remove that difference along with the technical shift. Use pooled QCs as the reference if you have them.",
           paste(sprintf("'%s'", names(n_lv)[n_lv < 2]), collapse = ", "),
           check_factor))
     }

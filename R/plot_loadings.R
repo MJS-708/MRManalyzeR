@@ -12,7 +12,7 @@
 #' The palette is shared with the heatmap feature annotation, so a class is the
 #' same colour in both figures.
 #'
-#' @param pca The list returned by [run_pca()].
+#' @param pca The list returned by [runPCA()].
 #' @param variable_meta Feature metadata, or a `DatasetExperiment` to take it
 #'   from. Matched to the loadings by `Compound`.
 #' @param components Length-2 integer vector: which components to show. Falls
@@ -21,14 +21,14 @@
 #'   `NULL` draws every bar in one colour.
 #' @return A `ggplot`, or `NULL` if the PCA could not be fit.
 #' @examples
-#' de  <- load_dataset(system.file("extdata", "example_synthetic.RDS",
+#' de  <- loadDataset(system.file("extdata", "example_synthetic.RDS",
 #'                                 package = "MRManalyzeR"))
-#' pca <- run_pca(de, transform = "log2")
-#' plot_loadings(pca, de, colour_by = "Enzymatic_pathway")
+#' pca <- runPCA(de, transform = "log2")
+#' plotLoadings(pca, de, colour_by = "Enzymatic_pathway")
 #' @family QC check
-#' @seealso [plot_pca()] for the matching scores plot.
+#' @seealso [plotPCA()] for the matching scores plot.
 #' @export
-plot_loadings = function(pca, variable_meta, components = c(1, 2),
+plotLoadings = function(pca, variable_meta, components = c(1, 2),
                          colour_by = NULL){
 
   if(is.null(pca$pr)) return(NULL)

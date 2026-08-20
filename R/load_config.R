@@ -3,12 +3,12 @@
 #' @param path_yaml Full path to YAML file
 #' @return Named list of parameters parsed from the YAML
 #' @examples
-#' cfg <- load_config(system.file("extdata", "example_config.yml",
+#' cfg <- loadConfig(system.file("extdata", "example_config.yml",
 #'                                package = "MRManalyzeR"))
 #' names(cfg$project)
 #' @family data parse
 #' @export
-load_config = function(path_yaml){
+loadConfig = function(path_yaml){
   yaml::read_yaml(
     path_yaml,
     handlers = list(

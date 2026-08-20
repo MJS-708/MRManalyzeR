@@ -48,29 +48,29 @@
 #'   vector (e.g. `["Area", "Response", "Conc"]`), the function loops over each
 #'   datatype and returns a list of per-datatype results.
 #' @examples
-#' # run_example() writes a config for the bundled dataset and drives
-#' # run_MRManalyzeR(); render = FALSE keeps it to the peak-matrix build.
-#' run_example(render = FALSE, open = FALSE)
+#' # runExample() writes a config for the bundled dataset and drives
+#' # runMRManalyzeR(); render = FALSE keeps it to the peak-matrix build.
+#' runExample(render = FALSE, open = FALSE)
 #' @family entry points
 #' @export
-run_MRManalyzeR = function(path_yaml){
+runMRManalyzeR = function(path_yaml){
 
   stopifnot(file.exists(path_yaml))
 
   # --- Load & unpack YAML -------------------------------------------------
-  project_params = load_config(path_yaml)
+  project_params = loadConfig(path_yaml)
 
   # Fail early, and once. A structural mistake in the config would otherwise
   # surface as an obscure error somewhere in processing or report rendering,
   # after minutes of work, with only the first problem visible.
-  cfg_check = validate_config(project_params)
+  cfg_check = validateConfig(project_params)
   if(length(cfg_check$errors))
-    stop("[run_MRManalyzeR] configuration is not valid:
+    stop("[runMRManalyzeR] configuration is not valid:
 ",
          paste0("  - ", cfg_check$errors, collapse = "
 "),
          call. = FALSE)
-  for(w in cfg_check$warnings) message("[validate_config] ", w)
+  for(w in cfg_check$warnings) message("[validateConfig] ", w)
 
   project_paths = project_params$project$paths
   pmp_params    = project_params$project$PeakMatrixProcessing
@@ -142,7 +142,7 @@ run_MRManalyzeR = function(path_yaml){
   enabled = sources[vapply(sources, function(s)
     isTRUE(pmp_params[[s]]$enabled), logical(1))]
 
-  # Exactly one source is expected to be enabled; process_dataset() is what
+  # Exactly one source is expected to be enabled; processDataset() is what
   # enforces that, so here an ambiguous config simply falls through to the
   # block-level setting rather than guessing which reader was meant.
   from_source = if(length(enabled) != 1L) NULL
@@ -190,7 +190,7 @@ run_MRManalyzeR = function(path_yaml){
 #' Pin a multi-valued config down to the single datatype being run
 #'
 #' The loop runs the whole workflow once per entry, so the source block itself
-#' has to be narrowed and not just the top-level copy: [read_skyline()] indexes
+#' has to be narrowed and not just the top-level copy: [readSkyline()] indexes
 #' `feature_metadata` by `signal_filter`, and a two-element list is not a
 #' column name.
 #'
@@ -232,13 +232,13 @@ run_MRManalyzeR = function(path_yaml){
   present = openxlsx::getSheetNames(xlsx_path)
   if(!sheet %in% present)
     stop(sprintf(
-      "[run_MRManalyzeR] no sheet '%s' in %s.\nSheets present: %s.\nSet PeakMatrixProcessing.%s to one of these.",
+      "[runMRManalyzeR] no sheet '%s' in %s.\nSheets present: %s.\nSet PeakMatrixProcessing.%s to one of these.",
       sheet, basename(xlsx_path), paste(present, collapse = ", "), key),
       call. = FALSE)
   openxlsx::read.xlsx(xlsx_path, sheet = sheet)
 }
 
-#' Single-datatype runner extracted from [`run_MRManalyzeR()`].
+#' Single-datatype runner extracted from [`runMRManalyzeR()`].
 #' @keywords internal
 #' @noRd
 .run_MRManalyzeR_one = function(project_params, project_paths, pmp_params,
@@ -306,7 +306,7 @@ run_MRManalyzeR = function(path_yaml){
       length(.ion_entries(st_params$ion_ratios))                          > 0
     if(has_stats){
       message("Running statistics...")
-      stats_tables = run_stats(combined_datamatrices, st_params)
+      stats_tables = runStats(combined_datamatrices, st_params)
 
       # Group summaries are what the boxplots and barplots are drawn from, so
       # they belong in the workbook next to the tests.
@@ -314,9 +314,9 @@ run_MRManalyzeR = function(path_yaml){
       if(!is.null(gsf) &&
          gsf %in% colnames(as.data.frame(combined_datamatrices$sample_meta)))
         group_summary = tryCatch(
-          summarise_groups(combined_datamatrices, gsf),
+          summariseGroups(combined_datamatrices, gsf),
           error = function(e){
-            warning("[run_MRManalyzeR] group summary skipped: ",
+            warning("[runMRManalyzeR] group summary skipped: ",
                     conditionMessage(e)); NULL
           })
 
@@ -358,6 +358,22 @@ run_MRManalyzeR = function(path_yaml){
 
 `%||%` = function(a, b) if(is.null(a)) b else a
 
+#' Read a detection-filter block from the YAML
+#'
+#' Returns FALSE (the off switch processDataset() understands) when the block
+#' is absent, or present with enabled: False. Otherwise hands back the block
+#' itself, minus the `enabled` flag, so its keys map onto the filter's
+#' arguments by name.
+#' @keywords internal
+#' @noRd
+.filter_block = function(x){
+  if(is.null(x) || isFALSE(x)) return(FALSE)
+  x = as.list(x)
+  if(!isTRUE(x$enabled)) return(FALSE)
+  x$enabled = NULL
+  x
+}
+
 #' @keywords internal
 #' @noRd
 .run_pmp = function(project_paths, pmp_params, datatype,
@@ -391,18 +407,18 @@ run_MRManalyzeR = function(path_yaml){
   # once: a duplicated sample name and a text value in a measurement column
   # are both worth knowing about before a ten-minute run, not one after the
   # other across three attempts.
-  in_check = validate_input(fdata, metadata,
+  in_check = validateInput(fdata, metadata,
                             name_col            = name_col,
                             compound_col        = compound_col,
                             processing_name_col = processing_name_col,
                             report_col          = report_col,
                             include_col         = include_col)
   if(length(in_check$errors))
-    stop("[run_MRManalyzeR] input workbook is not valid:
+    stop("[runMRManalyzeR] input workbook is not valid:
 ",
          paste0("  - ", in_check$errors, collapse = "
 "), call. = FALSE)
-  for(w in in_check$warnings) message("[validate_input] ", w)
+  for(w in in_check$warnings) message("[validateInput] ", w)
 
   metadata = metadata[which(metadata[[include_col]] == include_value), , drop = FALSE]
 
@@ -422,7 +438,7 @@ run_MRManalyzeR = function(path_yaml){
           matrix_data  = isTRUE(mx$enabled))
   if(sum(on) != 1)
     stop(sprintf(
-      "[run_MRManalyzeR] %d data sources enabled under PeakMatrixProcessing (%s) - enable exactly one.",
+      "[runMRManalyzeR] %d data sources enabled under PeakMatrixProcessing (%s) - enable exactly one.",
       sum(on), paste(names(on), collapse = ", ")))
 
   matrix_id_col      = NULL
@@ -454,11 +470,11 @@ run_MRManalyzeR = function(path_yaml){
 
   # PeakMatrixProcessing.adjust_conc is a nested YAML block (enabled toggle
   # + 5 sample_metadata column names) rather than flat keys, so the study's
-  # own column names never need to be hardcoded in R -- see adjust_concentration.R.
+  # own column names never need to be hardcoded in R -- see adjustConcentration.R.
   ac_pars = pmp_params$adjust_conc %||% list()
 
   message("Generating data matrix...")
-  combined_data = process_dataset(
+  combined_data = processDataset(
     fdata            = fdata,
     metadata         = metadata,
     xlsx_path        = xlsx_path,
@@ -477,13 +493,18 @@ run_MRManalyzeR = function(path_yaml){
     processing_batch = pmp_params$processing_batch,
     matrix_id_col      = matrix_id_col,
     matrix_orientation = matrix_orientation,
-    # Lets correct_batch() test whether batch is confounded with the study
+    # Lets correctBatch() test whether batch is confounded with the study
     # factor, which is the assumption a non-QC reference rests on.
     bc_check_factor  = pmp_params$bc_check_factor %||%
                          (project_params$project$stats_report %||%
                           list())$global_summary_factor,
     blank_head       = pmp_params$blank_head,
     blank_name       = pmp_params$blank_name,
+    # Detection filters. Both default off, so an existing config reproduces
+    # byte-for-byte; a block that is present but has enabled: False is also
+    # off, which is what lets the example configs document the shape.
+    filter_features  = .filter_block(pmp_params$filter_features),
+    filter_samples   = .filter_block(pmp_params$filter_samples),
     normalize        = pmp_params$normalize,
     adjust_conc      = isTRUE(ac_pars$enabled),
     starting_vol_col = ac_pars$starting_vol_col %||% FALSE,
@@ -507,9 +528,9 @@ run_MRManalyzeR = function(path_yaml){
   # Design checks need the data and the config together, so they run here
   # rather than at load time. These are warnings by default: a thin group or a
   # batch without QCs is a judgement call, not a malformed input - except
-  # complete confounding, which validate_design() reports as an error.
+  # complete confounding, which validateDesign() reports as an error.
   dz_check = tryCatch(
-    validate_design(combined_datamatrices, project_params,
+    validateDesign(combined_datamatrices, project_params,
                     sample_type_head = (project_params$project$data_quality_report %||%
                                         list())$sample_type_head %||% "Sample_type",
                     qc_label   = (project_params$project$data_quality_report %||%
@@ -517,12 +538,12 @@ run_MRManalyzeR = function(path_yaml){
                     blank_name = pmp_params$blank_name %||% "Blank",
                     batch_head = pmp_params$bc_header  %||% "Chrom_Batch"),
     error = function(e){
-      warning("[run_MRManalyzeR] design validation skipped: ",
+      warning("[runMRManalyzeR] design validation skipped: ",
               conditionMessage(e)); NULL
     })
   if(!is.null(dz_check)){
-    for(w in dz_check$warnings) message("[validate_design] ", w)
-    for(e in dz_check$errors)   warning("[validate_design] ", e)
+    for(w in dz_check$warnings) message("[validateDesign] ", w)
+    for(e in dz_check$errors)   warning("[validateDesign] ", e)
   }
 
   scale_fac = pmp_params$scale_fac %||% 1
@@ -533,7 +554,7 @@ run_MRManalyzeR = function(path_yaml){
   # labels (defaults if that block is absent).
   dq_cv = project_params$project$data_quality_report %||%
             project_params$project$UVA_report %||% list()
-  combined_datamatrices = add_cv_metrics(
+  combined_datamatrices = addCVMetrics(
     combined_datamatrices,
     sample_type_head = dq_cv$sample_type_head %||% "Sample_type",
     qc_label         = dq_cv$qc_label         %||% "QC",
@@ -610,8 +631,8 @@ run_MRManalyzeR = function(path_yaml){
     }
 
     # Parent on the package namespace so the Rmd can find package
-    # functions (run_pca, subset_dataset, ...) even when the caller
-    # invoked us via `MRManalyzeR::run_MRManalyzeR()` without
+    # functions (runPCA, subsetDataset, ...) even when the caller
+    # invoked us via `MRManalyzeR::runMRManalyzeR()` without
     # `library(MRManalyzeR)`. Lookup chain: chunk env -> render env ->
     # MRManalyzeR namespace -> imports -> base.
     pkg_ns = tryCatch(asNamespace("MRManalyzeR"),
@@ -653,7 +674,7 @@ run_MRManalyzeR = function(path_yaml){
 #' Run the combine-mode workflow from a dedicated combine YAML
 #'
 #' Merges several previously-saved datasets (`.RDS` or `.xlsx` outputs of
-#' [`run_MRManalyzeR()`]) into one `DatasetExperiment`, then runs the
+#' [`runMRManalyzeR()`]) into one `DatasetExperiment`, then runs the
 #' `stats_report` analyses on the merged data. Skips PeakMatrixProcessing
 #' and the data_quality_report.
 #'
@@ -696,7 +717,7 @@ run_MRManalyzeR = function(path_yaml){
 #'   `stats_tables`, and the output paths.
 #' @examples
 #' # Two tiny processed panels (normally .RDS/.xlsx outputs of
-#' # run_MRManalyzeR()) that share sample IDs, merged via a combine YAML.
+#' # runMRManalyzeR()) that share sample IDs, merged via a combine YAML.
 #' # stats_report execute = FALSE keeps the example to the merge itself.
 #' dir <- tempfile("combine_"); dir.create(dir)
 #' mk <- function(feats) struct::DatasetExperiment(
@@ -718,13 +739,13 @@ run_MRManalyzeR = function(path_yaml){
 #'     output_stub     = file.path(dir, "combined")),
 #'   stats_report = list(execute = FALSE))
 #' yml <- file.path(dir, "combine.yml"); yaml::write_yaml(cfg, yml)
-#' run_MRManalyzeR_combine(yml)
+#' runMRManalyzeRCombine(yml)
 #' @family entry points
 #' @export
-run_MRManalyzeR_combine = function(path_yaml){
+runMRManalyzeRCombine = function(path_yaml){
 
   stopifnot(file.exists(path_yaml))
-  cfg = load_config(path_yaml)
+  cfg = loadConfig(path_yaml)
 
   # Tolerate either a flat top-level layout or a `project:` wrapper.
   root = cfg$project %||% cfg
@@ -757,7 +778,7 @@ run_MRManalyzeR_combine = function(path_yaml){
   dir.create(dirname(output_stub), recursive = TRUE, showWarnings = FALSE)
 
   message(sprintf("[combine] Merging %d dataset(s) ...", length(ds)))
-  combined = combine_datasets(
+  combined = combineDatasets(
     paths               = paths,
     feature_meta_cols   = combine_params$feature_meta_cols,
     sample_meta_cols    = combine_params$sample_meta_cols,
@@ -780,7 +801,7 @@ run_MRManalyzeR_combine = function(path_yaml){
   add_info = data.frame(
     sheet = c("matrix", "matrix"),
     info  = c("source", "n_input_datasets"),
-    value = c("combine_datasets()", as.character(length(ds)))
+    value = c("combineDatasets()", as.character(length(ds)))
   )
   .write_output_xlsx(out_xlsx, combined,
                      removed_features = data.frame(),
@@ -799,7 +820,7 @@ run_MRManalyzeR_combine = function(path_yaml){
       length(.section_entries(st_params$linear_models, "linear_models")) > 0
     if(has_stats){
       message("[combine] Running statistics on merged data ...")
-      stats_tables = run_stats(combined, st_params)
+      stats_tables = runStats(combined, st_params)
       append_stats_xlsx(out_stats_xlsx, stats_tables)
       message("Wrote stats to: ", out_stats_xlsx)
     }
