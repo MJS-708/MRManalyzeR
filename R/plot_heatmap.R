@@ -17,8 +17,8 @@
 #' gaps drawn between blocks, and clustered *within* each block when
 #' `cluster_within_groups` is set - so a class stays together and the
 #' clustering tells you about structure inside it, not about which classes
-#' happen to resemble each other. The class palette matches [plot_loadings()]
-#' and [plot_correlation()].
+#' happen to resemble each other. The class palette matches [plotLoadings()]
+#' and [plotCorrelation()].
 #'
 #' `orientation` decides which axis carries samples: `"samples_y"` puts them on
 #' rows, `"samples_x"` transposes, and `"auto"` puts whichever dimension is
@@ -51,15 +51,15 @@
 #'   little data to draw (fewer than 3 samples, 2 features, or no variable
 #'   compound).
 #' @examples
-#' de <- load_dataset(system.file("extdata", "example_synthetic.RDS",
+#' de <- loadDataset(system.file("extdata", "example_synthetic.RDS",
 #'                                package = "MRManalyzeR"))
-#' de <- subset_dataset(de, conditions = list(Sample_type = "Sample"))
-#' plot_heatmap(de, color_samples_by = "Treatment",
+#' de <- subsetDataset(de, conditions = list(Sample_type = "Sample"))
+#' plotHeatmap(de, color_samples_by = "Treatment",
 #'              group_features_by = "Enzymatic_pathway",
 #'              title = "All features")
 #' @family stats
 #' @export
-plot_heatmap = function(de, features = NULL, title = NULL,
+plotHeatmap = function(de, features = NULL, title = NULL,
                         color_samples_by,
                         group_features_by     = NULL,
                         transform             = c("none", "log2", "sqrt"),
@@ -79,7 +79,7 @@ plot_heatmap = function(de, features = NULL, title = NULL,
   feature_labels = match.arg(feature_labels)
 
   if(!requireNamespace("pheatmap", quietly = TRUE)){
-    warning("[plot_heatmap] pheatmap is not installed.")
+    warning("[plotHeatmap] pheatmap is not installed.")
     return(NULL)
   }
 
@@ -91,7 +91,7 @@ plot_heatmap = function(de, features = NULL, title = NULL,
 
   if(nrow(M) < 3 || ncol(M) < 2) return(NULL)
   color_samples_by = .resolve_meta_col(color_samples_by, smeta) %||%
-    stop(sprintf("[plot_heatmap] '%s' is not a sample_meta column. Present: %s.",
+    stop(sprintf("[plotHeatmap] '%s' is not a sample_meta column. Present: %s.",
                  color_samples_by, paste(colnames(smeta), collapse = ", ")))
   group_features_by = .resolve_meta_col(group_features_by, vmeta)
   sample_id_head    = .resolve_meta_col(sample_id_head, smeta)
@@ -196,7 +196,10 @@ plot_heatmap = function(de, features = NULL, title = NULL,
     legend_breaks = c(-cap, -1, 0, 1, cap),
     legend_labels = c(sprintf("<= -%g", cap), "-1", "0", "1",
                       sprintf(">= %g", cap)),
-    main   = title,
+    # pheatmap's own default is NA, and it tests `is.na(main)` - so passing the
+    # documented title = NULL default straight through fails with "argument is
+    # of length zero" rather than drawing an untitled heatmap.
+    main   = title %||% NA,
     silent = TRUE)
 
   # Wrapping the pheatmap gtable in a ggplot makes it fill the knitr canvas and

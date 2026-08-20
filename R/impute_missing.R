@@ -9,7 +9,7 @@
 #' This is the only imputation applied to the reported matrix, and it is
 #' deliberately simple: for a targeted panel a compound that is missing in most
 #' samples is usually better dropped than modelled. Where the choice matters
-#' more -- ahead of PCA -- [run_pca()] offers `"none"`, `"min"`, `"half_min"`
+#' more -- ahead of PCA -- [runPCA()] offers `"none"`, `"min"`, `"half_min"`
 #' and `"frac_min"`, plus per-feature and per-sample missingness filters that
 #' discard rather than fill.
 #'
@@ -39,9 +39,9 @@
 #'                            row.names = c("S1", "S2", "S3")),
 #'   variable_meta = data.frame(Compound = c("PGE2", "PGD2"),
 #'                              row.names = c("PGE2", "PGD2")))
-#' impute_missing(de, scalar = 0.5)$data
+#' imputeMissing(de, scalar = 0.5)$data
 #' @export
-impute_missing = function(de, scalar, blank_head = "Sample_type",
+imputeMissing = function(de, scalar, blank_head = "Sample_type",
                           blank_name = "Blank", warn_frac = 0.5){
 
   if(isTRUE(scalar))
@@ -83,7 +83,7 @@ impute_missing = function(de, scalar, blank_head = "Sample_type",
     bad = names(frac_imp)[is.finite(frac_imp) & frac_imp > warn_frac]
     if(length(bad))
       warning(sprintf(
-        "[impute_missing] %d feature(s) imputed in more than %.0f%% of samples and are mostly a constant: %s",
+        "[imputeMissing] %d feature(s) imputed in more than %.0f%% of samples and are mostly a constant: %s",
         length(bad), warn_frac * 100,
         paste(utils::head(bad, 5), collapse = ", ")))
   }

@@ -20,38 +20,38 @@ object and returns it.
 }
 \section{Entry points}{
 
-[run_MRManalyzeR()] drives all four stages from a single YAML config;
-[run_MRManalyzeR_combine()] merges several acquisition panels into one
-analysis; [run_example()] runs the bundled example dataset end to end.
+[runMRManalyzeR()] drives all four stages from a single YAML config;
+[runMRManalyzeRCombine()] merges several acquisition panels into one
+analysis; [runExample()] runs the bundled example dataset end to end.
 }
 
 \section{1. Data parse}{
 
-What did the instrument report? [read_targetlynx()] and [read_skyline()]
+What did the instrument report? [readTargetLynx()] and [readSkyline()]
 read a workbook into a wide sample x compound matrix, which
-[assemble_dataset()] turns into a `struct::DatasetExperiment`.
-[load_config()], [load_dataset()] and [combine_datasets()] read a YAML
+[assembleDataset()] turns into a `struct::DatasetExperiment`.
+[loadConfig()], [loadDataset()] and [combineDatasets()] read a YAML
 config, a stored dataset, and several datasets merged into one.
 }
 
 \section{2. Peak-matrix processing}{
 
-What is the true concentration? [filter_blanks()], [normalise_matrix()],
-[adjust_concentration()], [impute_missing()] and [correct_batch()], with
-[subset_dataset()] to slice a dataset by sample metadata.
-[process_dataset()] composes stages 1 and 2 in one call.
+What is the true concentration? [filterBlanks()], [normaliseMatrix()],
+[adjustConcentration()], [imputeMissing()] and [correctBatch()], with
+[subsetDataset()] to slice a dataset by sample metadata.
+[processDataset()] composes stages 1 and 2 in one call.
 }
 
 \section{3. QC check}{
 
-Can these numbers be trusted? [run_pca()], plus the per-compound CV metrics
-added to `variable_meta` by [run_MRManalyzeR()] and the bundled
+Can these numbers be trusted? [runPCA()], plus the per-compound CV metrics
+added to `variable_meta` by [runMRManalyzeR()] and the bundled
 data-quality report.
 }
 
 \section{4. Stats}{
 
-What do these numbers mean? [run_stats()] runs the comparisons,
+What do these numbers mean? [runStats()] runs the comparisons,
 correlations and linear models described by the YAML `stats_report:` block
 and returns the same tables the statistics report and the output xlsx use.
 

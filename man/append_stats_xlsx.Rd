@@ -7,12 +7,12 @@
 append_stats_xlsx(out_xlsx, stats_tables, group_summary = NULL)
 }
 \arguments{
-\item{out_xlsx}{Path to the results xlsx (from `run_MRManalyzeR()`).}
+\item{out_xlsx}{Path to the results xlsx (from `runMRManalyzeR()`).}
 
 \item{stats_tables}{A list with elements `stats`, `correlations`,
-`linear_models` and `ion_ratios` - as returned by [`run_stats()`].}
+`linear_models` and `ion_ratios` - as returned by [`runStats()`].}
 
-\item{group_summary}{Optional data frame from [`summarise_groups()`],
+\item{group_summary}{Optional data frame from [`summariseGroups()`],
 written as the `summary` tab. `NULL` skips it.}
 }
 \value{

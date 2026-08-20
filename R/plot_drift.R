@@ -28,12 +28,12 @@
 #'   headroom multiplier applied above it.
 #' @return A `ggplot`.
 #' @examples
-#' de <- load_dataset(system.file("extdata", "example_synthetic.RDS",
+#' de <- loadDataset(system.file("extdata", "example_synthetic.RDS",
 #'                                package = "MRManalyzeR"))
-#' plot_drift(de, "Analyte_02", value_label = "ng/mL")
+#' plotDrift(de, "Analyte_02", value_label = "ng/mL")
 #' @family QC check
 #' @export
-plot_drift = function(de, compound,
+plotDrift = function(de, compound,
                       sample_type_head     = "Sample_type",
                       levels               = NULL,
                       injection_order_head = "Injection_order",
@@ -45,7 +45,7 @@ plot_drift = function(de, compound,
   dm    = as.data.frame(de$data)
   smeta = as.data.frame(de$sample_meta)
   if(!compound %in% colnames(dm))
-    stop(sprintf("[plot_drift] '%s' is not a feature in this dataset.",
+    stop(sprintf("[plotDrift] '%s' is not a feature in this dataset.",
                  compound))
 
   keep = if(is.null(levels) || !sample_type_head %in% colnames(smeta))

@@ -14,18 +14,18 @@
 #'
 #' @param de A `struct::DatasetExperiment` - the reported dataset.
 #' @param removed_features Optional data frame of dropped features, as returned
-#'   in `[[2]]` by [process_dataset()]. `NULL` (or zero rows) yields an
+#'   in `[[2]]` by [processDataset()]. `NULL` (or zero rows) yields an
 #'   included-only table, which is what happens when a run reuses a stored RDS
 #'   rather than reprocessing.
 #' @return A data frame with columns `Compound`, `Status` (`"included"` /
 #'   `"excluded"`) and `Comment`.
 #' @examples
-#' de <- load_dataset(system.file("extdata", "example_synthetic.RDS",
+#' de <- loadDataset(system.file("extdata", "example_synthetic.RDS",
 #'                                package = "MRManalyzeR"))
-#' head(summarise_features(de))
+#' head(summariseFeatures(de))
 #' @family QC check
 #' @export
-summarise_features = function(de, removed_features = NULL){
+summariseFeatures = function(de, removed_features = NULL){
 
   vm = as.data.frame(de$variable_meta)
 

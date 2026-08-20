@@ -15,10 +15,10 @@
 #' If the workbook does not exist (e.g. results dir was cleaned), a new one
 #' is written containing only the stats tabs.
 #'
-#' @param out_xlsx Path to the results xlsx (from `run_MRManalyzeR()`).
+#' @param out_xlsx Path to the results xlsx (from `runMRManalyzeR()`).
 #' @param stats_tables A list with elements `stats`, `correlations`,
-#'   `linear_models` and `ion_ratios` - as returned by [`run_stats()`].
-#' @param group_summary Optional data frame from [`summarise_groups()`],
+#'   `linear_models` and `ion_ratios` - as returned by [`runStats()`].
+#' @param group_summary Optional data frame from [`summariseGroups()`],
 #'   written as the `summary` tab. `NULL` skips it.
 #' @return Invisibly, the path written.
 #' @keywords internal

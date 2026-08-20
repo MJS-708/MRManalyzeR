@@ -1,4 +1,4 @@
-# Tests for combine_datasets() — merging multiple panels by Sample_ID.
+# Tests for combineDatasets() — merging multiple panels by Sample_ID.
 # Builds two synthetic struct::DatasetExperiment RDS files in tempdir(),
 # runs the merge, and checks the row/column outcomes.
 
@@ -36,7 +36,7 @@ test_that("intersects samples by Sample_ID and rbinds variable_meta", {
                       file.path(td, "panel1.RDS"))
   p2 <- .write_de_rds(.make_de(c("S2", "S3", "S4"),         c("C", "D")),
                       file.path(td, "panel2.RDS"))
-  out <- combine_datasets(c(panel1 = p1, panel2 = p2))
+  out <- combineDatasets(c(panel1 = p1, panel2 = p2))
 
   # Common samples = {S2, S3}; combined features = {A, B, C, D}
   expect_equal(sort(rownames(out$data)), c("S2", "S3"))
@@ -50,7 +50,7 @@ test_that("prefix_features tags column names with the dataset", {
                       file.path(td, "panel1.RDS"))
   p2 <- .write_de_rds(.make_de(c("S1", "S2"), c("X", "Y")),
                       file.path(td, "panel2.RDS"))
-  out <- combine_datasets(c(GOM = p1, SPM = p2), prefix_features = TRUE)
+  out <- combineDatasets(c(GOM = p1, SPM = p2), prefix_features = TRUE)
 
   expect_setequal(colnames(out$data),
                   c("GOM__X", "GOM__Y", "SPM__X", "SPM__Y"))
@@ -63,7 +63,7 @@ test_that("qc_remap renames listed QCs and drops unmapped ones", {
   p2 <- .write_de_rds(.make_de(c("S1", "QC_a", "QC_b"),     c("B")),
                       file.path(td, "panel2.RDS"))
 
-  out <- combine_datasets(
+  out <- combineDatasets(
     c(p1 = p1, p2 = p2),
     qc_remap = list(p1 = c("QC1" = "QC_pool"),
                     p2 = c("QC_a" = "QC_pool"))
@@ -79,7 +79,7 @@ test_that("drop_samples filter removes named IDs from the merge", {
                       file.path(td, "panel1.RDS"))
   p2 <- .write_de_rds(.make_de(c("S1", "S2", "S3"), c("B")),
                       file.path(td, "panel2.RDS"))
-  out <- combine_datasets(c(p1 = p1, p2 = p2), drop_samples = "S2")
+  out <- combineDatasets(c(p1 = p1, p2 = p2), drop_samples = "S2")
   expect_setequal(rownames(out$data), c("S1", "S3"))
 })
 
@@ -91,7 +91,7 @@ test_that("feature_meta_cols defaults to intersection across inputs", {
 
   p1 <- .write_de_rds(d1, file.path(td, "panel1.RDS"))
   p2 <- .write_de_rds(d2, file.path(td, "panel2.RDS"))
-  out <- combine_datasets(c(p1 = p1, p2 = p2))
+  out <- combineDatasets(c(p1 = p1, p2 = p2))
 
   expect_true(all(c("Compound", "Class") %in% colnames(out$variable_meta)))
   expect_false("Pathway" %in% colnames(out$variable_meta))
@@ -104,7 +104,7 @@ test_that("prefix_features='auto' only prefixes colliding names", {
                       file.path(td, "panel1.RDS"))
   p2 <- .write_de_rds(.make_de(c("S1", "S2"), c("X", "Z")),
                       file.path(td, "panel2.RDS"))
-  out <- combine_datasets(c(GOM = p1, SPM = p2), prefix_features = "auto")
+  out <- combineDatasets(c(GOM = p1, SPM = p2), prefix_features = "auto")
 
   expect_setequal(colnames(out$data), c("GOM__X", "Y", "SPM__X", "Z"))
 })
@@ -115,6 +115,6 @@ test_that("errors when no samples are common across inputs", {
                       file.path(td, "panel1.RDS"))
   p2 <- .write_de_rds(.make_de(c("S3", "S4"), c("B")),
                       file.path(td, "panel2.RDS"))
-  expect_error(combine_datasets(c(p1 = p1, p2 = p2)),
+  expect_error(combineDatasets(c(p1 = p1, p2 = p2)),
                "No samples in common")
 })

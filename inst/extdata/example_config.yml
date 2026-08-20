@@ -3,7 +3,7 @@ project: &general
   researcher: Matt Smith
 
   # See inst/extdata/example_combine_config.yml for the merge-multiple-
-  # acquisitions workflow (run_MRManalyzeR_combine()).
+  # acquisitions workflow (runMRManalyzeRCombine()).
 
   # ============================= PATHS =============================
   paths:
@@ -73,6 +73,34 @@ project: &general
     blank_filter: False                   # nx > blank median | False
     blank_head: 'Sample_type'             # column identifying blanks
     blank_name: 'Blank'                   # value marking blanks
+    # 4b. Feature detection filter  (runs after the blank filter, before
+    #     normalisation and imputation; applied once to the whole dataset,
+    #     never per batch)
+    filter_features:
+      enabled: False
+      min_frac: 0.5              # keep a feature detected in >= this fraction
+      method: within             # across | within | QC
+                                 #   within - fraction per group_col level, best
+                                 #            level wins, so a feature real in
+                                 #            only one treatment survives
+                                 #   across - one fraction over all study
+                                 #            samples; deletes treatment-
+                                 #            specific features, use with care
+                                 #   QC     - fraction over QCs only; falls back
+                                 #            to within if the run has no QCs
+      group_col: Treatment       # 'within' only
+      sample_col: Sample_type    # QCs and blanks never count towards the
+      sample_labels: ["Sample"]  #   fraction, but are kept in the dataset
+      qc_label: QC               # 'QC' only
+
+    # 4c. Sample filter  (runs after 4b, on the reduced feature set, so the
+    #     missing-value fraction is measured against features that are real)
+    filter_samples:
+      enabled: False
+      max_na: 0.8                # drop a study injection missing > this fraction
+      sample_col: Sample_type    # only study samples are ever removed; a QC or
+      sample_labels: ["Sample"]  #   blank over the threshold is reported, kept
+
 
     # 5. Normalisation
     normalize: False                      # False | sample_metadata column to divide by
@@ -247,7 +275,10 @@ project: &general
       color_samples_by:       Treatment    # sample annotation + 4.6 Global-tab ranking factor
       group_features_by:      Enzymatic_pathway
       transform:              log2         # none | log2 | sqrt
-      scale:                  z            # z | none
+      scale:                  z            # z | none  (ignored when style is group_means)
+      style:                  auto         # auto | samples | group_means
+                                           #   auto -> group_means at 3+ groups, samples at 2
+      alpha_floor:            0.6          # group_means only: opacity of a non-contributing sample
       cluster_rows:           False
       cluster_within_groups:  True
       rank_by:                log2fc       # 4.6 comparison-tab ranking: p_adj | p_value | log2fc

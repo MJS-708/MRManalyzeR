@@ -1,6 +1,6 @@
 #' Read a plain sample x compound matrix
 #'
-#' The vendor-neutral route in. `read_targetlynx()` and `read_skyline()` exist
+#' The vendor-neutral route in. `readTargetLynx()` and `readSkyline()` exist
 #' because those two exports are awkward shapes; anything that can produce a
 #' rectangular table of samples against analytes needs no parser, only a
 #' documented schema. That covers Sciex MultiQuant, Agilent MassHunter, Thermo
@@ -15,7 +15,7 @@
 #'
 #' No signal filtering is applied, because a generic matrix carries no S/N or
 #' LOD information. Mask values before import, or supply an `LOD`/`LOQ` column
-#' in `feature_meta` and use [process_dataset()] with `signal_filter`.
+#' in `feature_meta` and use [processDataset()] with `signal_filter`.
 #'
 #' @param x Path to an xlsx workbook, or a data frame / matrix already in
 #'   memory.
@@ -30,15 +30,15 @@
 #' @param orientation `"samples_rows"` (default: one row per sample) or
 #'   `"samples_cols"` (one row per analyte, transposed on read).
 #' @return A data frame, rows = samples, columns = compounds, numeric - the
-#'   same contract as [read_targetlynx()] and [read_skyline()].
+#'   same contract as [readTargetLynx()] and [readSkyline()].
 #' @examples
 #' m <- data.frame(Name = c("S1", "S2", "S3"),
 #'                 PGE2 = c(120, 95, 140),
 #'                 PGD2 = c(45, 51, 38))
-#' read_peak_matrix(m)
+#' readPeakMatrix(m)
 #' @family data parse
 #' @export
-read_peak_matrix = function(x, data_tab_names = "matrix_data",
+readPeakMatrix = function(x, data_tab_names = "matrix_data",
                             id_col = NULL,
                             orientation = c("samples_rows",
                                             "samples_cols")){
@@ -54,7 +54,7 @@ read_peak_matrix = function(x, data_tab_names = "matrix_data",
   }
 
   if(ncol(raw) < 2)
-    stop("[read_peak_matrix] need an identifier column plus at least one measurement column.")
+    stop("[readPeakMatrix] need an identifier column plus at least one measurement column.")
 
   # check.names = FALSE throughout: compound names routinely contain brackets,
   # parentheses and commas that make.names() would mangle, breaking every
@@ -62,7 +62,7 @@ read_peak_matrix = function(x, data_tab_names = "matrix_data",
   raw = as.data.frame(raw, check.names = FALSE)
   idc = if(is.null(id_col)) 1L else match(id_col, colnames(raw))
   if(is.na(idc))
-    stop(sprintf("[read_peak_matrix] id_col '%s' is not a column. Present: %s.",
+    stop(sprintf("[readPeakMatrix] id_col '%s' is not a column. Present: %s.",
                  id_col, paste(colnames(raw), collapse = ", ")))
 
   ids = as.character(raw[[idc]])
@@ -75,7 +75,7 @@ read_peak_matrix = function(x, data_tab_names = "matrix_data",
   }
 
   if(anyDuplicated(ids))
-    stop(sprintf("[read_peak_matrix] duplicate sample identifier(s): %s",
+    stop(sprintf("[readPeakMatrix] duplicate sample identifier(s): %s",
                  paste(unique(ids[duplicated(ids)]), collapse = ", ")))
 
   # Sentinel non-detect tokens vary by vendor; resolve the common ones to NA

@@ -39,9 +39,9 @@
 #'                            row.names = c("S1", "S2")),
 #'   variable_meta = data.frame(Compound = c("PGE2", "PGD2"),
 #'                              row.names = c("PGE2", "PGD2")))
-#' adjust_concentration(de)$data
+#' adjustConcentration(de)$data
 #' @export
-adjust_concentration = function(de,
+adjustConcentration = function(de,
                                 sample_vol_col   = "sample_volume_uL",
                                 cal_vol_col      = "cal_vol_uL",
                                 sample_IS_col    = "sample_IS_vol_uL",
@@ -53,7 +53,7 @@ adjust_concentration = function(de,
   miss  = setdiff(req, colnames(smeta))
   if(length(miss))
     stop(sprintf(
-      "[adjust_concentration] sample_meta is missing required column(s): %s",
+      "[adjustConcentration] sample_meta is missing required column(s): %s",
       paste(miss, collapse = ", ")))
 
   fact = (smeta[[cal_vol_col]]   / smeta[[sample_vol_col]]) *
@@ -62,19 +62,19 @@ adjust_concentration = function(de,
   n_missing = sum(is.na(fact))
   if(n_missing)
     message(sprintf(
-      "[adjust_concentration] %d sample(s) have missing volume/IS metadata and will be NA: %s",
+      "[adjustConcentration] %d sample(s) have missing volume/IS metadata and will be NA: %s",
       n_missing, paste(head(rownames(smeta)[is.na(fact)], 5), collapse = ", ")))
 
   x = as.data.frame(de$data) * fact
 
   if(!isFALSE(starting_vol_col)){
     if(!starting_vol_col %in% colnames(smeta))
-      stop(sprintf("[adjust_concentration] sample_meta has no '%s' column.",
+      stop(sprintf("[adjustConcentration] sample_meta has no '%s' column.",
                    starting_vol_col))
     sv_fact = smeta[[sample_vol_col]] / smeta[[starting_vol_col]]
     if(sum(is.na(sv_fact)))
       message(sprintf(
-        "[adjust_concentration] %d sample(s) have missing %s/%s and will be NA.",
+        "[adjustConcentration] %d sample(s) have missing %s/%s and will be NA.",
         sum(is.na(sv_fact)), sample_vol_col, starting_vol_col))
     x = x * sv_fact
   }

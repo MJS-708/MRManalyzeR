@@ -43,11 +43,11 @@
 #' @examples
 #' X <- matrix(abs(rnorm(60, 100, 20)), nrow = 12,
 #'             dimnames = list(paste0("S", 1:12), paste0("F", 1:5)))
-#' res <- run_pca(X, transform = "log2")
+#' res <- runPCA(X, transform = "log2")
 #' res$steps
 #' @family QC check
 #' @export
-run_pca = function(X,
+runPCA = function(X,
                             impute        = c("min", "half_min", "frac_min", "none"),
                             impute_frac   = 0.5,
                             transform     = c("log2", "sqrt", "none"),

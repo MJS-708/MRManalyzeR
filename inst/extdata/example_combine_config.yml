@@ -2,7 +2,7 @@
 #
 # Usage:
 #   library(MRManalyzeR)
-#   run_MRManalyzeR_combine("path/to/your_combine_config.yml")
+#   runMRManalyzeRCombine("path/to/your_combine_config.yml")
 #
 # What this does:
 #   1. Loads each entry under `combine.datasets:` (.RDS or .xlsx — both OK).
@@ -130,7 +130,10 @@ stats_report:
     color_samples_by:       Treatment    # sample annotation + 4.6 Global-tab ranking factor
     group_features_by:      Primary
     transform:              log2         # none | log2 | sqrt
-    scale:                  z            # z | none
+    scale:                  z            # z | none  (ignored when style is group_means)
+    style:                  auto         # auto | samples | group_means
+                                         #   auto -> group_means at 3+ groups, samples at 2
+    alpha_floor:            0.6          # group_means only: opacity of a non-contributing sample
     cluster_rows:           False
     cluster_within_groups:  True
     rank_by:                log2fc       # 4.6 comparison-tab ranking: p_adj | p_value | log2fc

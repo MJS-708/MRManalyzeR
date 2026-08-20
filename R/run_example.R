@@ -5,7 +5,7 @@
 #' \doi{10.1016/j.prostaglandins.2018.05.005}). It loads
 #' `inst/extdata/example_data.xlsx` and `inst/extdata/example_config.yml`,
 #' rewrites the YAML's `paths:` block to point at a writable results
-#' directory + the bundled xlsx, and calls [`run_MRManalyzeR()`]. After the
+#' directory + the bundled xlsx, and calls [`runMRManalyzeR()`]. After the
 #' run the generated HTML reports are opened in interactive sessions.
 #'
 #' @param results_dir Directory to write outputs (xlsx, RDS, HTML reports)
@@ -15,15 +15,15 @@
 #' @param render Logical. Render the HTML reports? Default `TRUE`. Set
 #'   `FALSE` to build the peak matrix + xlsx/RDS outputs only (no pandoc) -
 #'   a quick smoke test of the processing workflow.
-#' @return Invisibly, the list returned by [`run_MRManalyzeR()`], whose
+#' @return Invisibly, the list returned by [`runMRManalyzeR()`], whose
 #'   `output_directory` element is the resolved results directory.
 #' @examples
 #' # Light run: build the peak matrix + outputs, skip HTML report rendering.
-#' res <- run_example(render = FALSE, open = FALSE)
+#' res <- runExample(render = FALSE, open = FALSE)
 #' res$output_directory       # where the xlsx + rds landed
 #' @family entry points
 #' @export
-run_example = function(results_dir = tempfile("MRManalyzeR_example_"),
+runExample = function(results_dir = tempfile("MRManalyzeR_example_"),
                        open        = interactive(),
                        render      = TRUE){
 
@@ -32,19 +32,19 @@ run_example = function(results_dir = tempfile("MRManalyzeR_example_"),
   base_yaml = system.file("extdata", "example_config.yml",
                           package = "MRManalyzeR")
   if(!nzchar(data_xlsx) || !file.exists(data_xlsx))
-    stop("[run_example] bundled example_data.xlsx not found ",
+    stop("[runExample] bundled example_data.xlsx not found ",
          "- reinstall MRManalyzeR.")
   if(!nzchar(base_yaml) || !file.exists(base_yaml))
-    stop("[run_example] bundled example_config.yml not found ",
+    stop("[runExample] bundled example_config.yml not found ",
          "- reinstall MRManalyzeR.")
 
   dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
 
-  # `load_config()` already resolves !concat_path so the returned `cfg` has
+  # `loadConfig()` already resolves !concat_path so the returned `cfg` has
   # plain string paths. We override the data + result locations to point at
   # the bundled xlsx and a writable temp folder, then write the modified
   # YAML alongside the outputs so the user can inspect / edit it.
-  cfg = load_config(base_yaml)
+  cfg = loadConfig(base_yaml)
   cfg$project$paths$data_dir    = dirname(data_xlsx)
   cfg$project$paths$result_dir  = results_dir
   cfg$project$paths$project_dir = results_dir
@@ -59,8 +59,8 @@ run_example = function(results_dir = tempfile("MRManalyzeR_example_"),
   out_yaml = file.path(results_dir, "example_config.yml")
   yaml::write_yaml(cfg, out_yaml)
 
-  message("[run_example] outputs -> ", results_dir)
-  res = run_MRManalyzeR(out_yaml)
+  message("[runExample] outputs -> ", results_dir)
+  res = runMRManalyzeR(out_yaml)
 
   if(isTRUE(open)){
     htmls = list.files(results_dir, pattern = "\\.html$", full.names = TRUE)

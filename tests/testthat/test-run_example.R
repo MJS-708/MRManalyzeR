@@ -1,11 +1,11 @@
-# End-to-end smoke test for run_example(). Renders both reports and
+# End-to-end smoke test for runExample(). Renders both reports and
 # checks the four expected output artefacts exist. Slow (~30-60s) and
 # pulls in plotly + rmarkdown — skipped on CRAN and skipped unless the
 # env var MRMANALYZER_RUN_E2E is set, so the default `devtools::test()`
 # stays fast. Set the env var to force a full smoke check:
 #   Sys.setenv(MRMANALYZER_RUN_E2E = "true"); devtools::test()
 
-test_that("run_example produces both reports + xlsx + RDS", {
+test_that("runExample produces both reports + xlsx + RDS", {
   skip_on_cran()
   skip_if_not(nzchar(Sys.getenv("MRMANALYZER_RUN_E2E")),
               "Set MRMANALYZER_RUN_E2E=true to run the e2e smoke test")
@@ -13,7 +13,7 @@ test_that("run_example produces both reports + xlsx + RDS", {
   skip_if_not_installed("plotly")
 
   td <- withr::local_tempdir()
-  res <- run_example(results_dir = td, open = FALSE)
+  res <- runExample(results_dir = td, open = FALSE)
 
   out_dir <- res$output_directory
   expect_equal(normalizePath(out_dir), normalizePath(td))

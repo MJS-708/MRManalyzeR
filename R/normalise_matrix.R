@@ -15,13 +15,13 @@
 #'   sample_meta = data.frame(protein_ug = c(2, 4), row.names = c("S1", "S2")),
 #'   variable_meta = data.frame(Compound = c("PGE2", "PGD2"),
 #'                              row.names = c("PGE2", "PGD2")))
-#' normalise_matrix(de, column = "protein_ug")$data
+#' normaliseMatrix(de, column = "protein_ug")$data
 #' @export
-normalise_matrix = function(de, column){
+normaliseMatrix = function(de, column){
 
   smeta = as.data.frame(de$sample_meta)
   if(!column %in% colnames(smeta))
-    stop(sprintf("[normalise_matrix] sample_meta has no '%s' column.", column))
+    stop(sprintf("[normaliseMatrix] sample_meta has no '%s' column.", column))
 
   # data rows and sample_meta rows are aligned in a DatasetExperiment, so the
   # divisor recycles down each feature column.

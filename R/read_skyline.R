@@ -18,10 +18,10 @@
 #' openxlsx::write.xlsx(list(skyline_data = sky), f)
 #' fm <- data.frame(Processing_name = c("PGE2", "PGD2"), Report = "YES",
 #'                  row.names = c("PGE2", "PGD2"))
-#' read_skyline(f, "skyline_data", fm)
+#' readSkyline(f, "skyline_data", fm)
 #' @family data parse
 #' @export
-read_skyline = function(xlsx_path, data_tab_names = "skyline_data",
+readSkyline = function(xlsx_path, data_tab_names = "skyline_data",
                         feature_meta, signal_filter = FALSE){
 
   out_table = .read_skyline_matrix(xlsx_path, data_tab_names, feature_meta)
@@ -81,12 +81,12 @@ read_skyline = function(xlsx_path, data_tab_names = "skyline_data",
     raw = openxlsx::read.xlsx(xlsx_path, sheet = sh)
 
     if(ncol(raw) < 2)
-      stop(sprintf("[read_skyline] sheet '%s' has no sample columns.", sh))
+      stop(sprintf("[readSkyline] sheet '%s' has no sample columns.", sh))
 
     molecules = as.character(raw[[1]])
     if(anyDuplicated(molecules))
       stop(sprintf(
-        "[read_skyline] sheet '%s' has duplicate Molecule entries: %s",
+        "[readSkyline] sheet '%s' has duplicate Molecule entries: %s",
         sh, paste(unique(molecules[duplicated(molecules)]), collapse = ", ")))
 
     mat = as.matrix(raw[, -1, drop = FALSE])
@@ -120,7 +120,7 @@ read_skyline = function(xlsx_path, data_tab_names = "skyline_data",
     if(any(bad)){
       bad_sheet = data_tab_names[-1][which(bad)[1]]
       stop(sprintf(
-        "[read_skyline] data_tab_names sheets disagree on which Report=='YES' compounds they cover ('%s' vs '%s'). All listed sheets must report the same reportable-compound set.",
+        "[readSkyline] data_tab_names sheets disagree on which Report=='YES' compounds they cover ('%s' vs '%s'). All listed sheets must report the same reportable-compound set.",
         data_tab_names[1], bad_sheet))
     }
   }
@@ -129,7 +129,7 @@ read_skyline = function(xlsx_path, data_tab_names = "skyline_data",
   all_samples = unlist(lapply(sheet_dfs, function(d) d$.sample_name))
   if(anyDuplicated(all_samples))
     stop(sprintf(
-      "[read_skyline] duplicate sample name(s) across data_tab_names sheets: %s",
+      "[readSkyline] duplicate sample name(s) across data_tab_names sheets: %s",
       paste(unique(all_samples[duplicated(all_samples)]), collapse = ", ")))
 
   # --- Merge: bind_rows unions columns (differing non-reportable/IS

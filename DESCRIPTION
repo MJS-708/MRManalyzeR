@@ -1,7 +1,7 @@
 Package: MRManalyzeR
 Type: Package
 Title: Process and Analyse Targeted LC-MS Lipidomics and Metabolomics Data
-Version: 0.99.1
+Version: 0.99.3
 Authors@R: c(
     person("Matthew J.", "Smith",
            email = "mattyjsmith123@gmail.com",
@@ -43,10 +43,12 @@ Imports:
     rmarkdown,
     methods,
     ggplot2,
+    ggnewscale,
     rlang,
     grDevices,
     pheatmap
 Suggests:
+    pmp,
     ggrepel,
     plotly,
     DT,

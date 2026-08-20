@@ -10,10 +10,10 @@ test_that(".stats_key_df() is well formed", {
   expect_equal(anyDuplicated(paste(key$Sheet, key$Column)), 0L)
 })
 
-# The key is only useful while it matches what run_stats() actually writes.
+# The key is only useful while it matches what runStats() actually writes.
 # These two directions catch the drift: a column defined but never written,
 # and a column written but never defined.
-test_that(".stats_key_df() matches the schemas run_stats() returns", {
+test_that(".stats_key_df() matches the schemas runStats() returns", {
 
   schemas = list(
     stats         = names(.empty_stats_df()),

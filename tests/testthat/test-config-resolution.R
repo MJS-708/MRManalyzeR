@@ -71,7 +71,7 @@ test_that(".resolve_datatype() keeps a vector for the datatype loop", {
 })
 
 test_that(".narrow_datatype() pins the enabled block to one value", {
-  # read_skyline() indexes feature_metadata by signal_filter, so a two-element
+  # readSkyline() indexes feature_metadata by signal_filter, so a two-element
   # list surviving into the run would be used as a column name.
   pmp = list(skyline_data = list(enabled = TRUE,
                                  signal_filter = c("LOD", "LOQ")))
