@@ -1122,7 +1122,7 @@ in the QC section.
 
 Kolmert J. *et al.* (2018). Prominent release of lipoxygenase generated
 mediators in a murine house dust mite-induced asthma model.
-*Prostaglandins & Other Lipid Mediators*.
+*Prostaglandins & Other Lipid Mediators* **137**, 20–29.
 <https://doi.org/10.1016/j.prostaglandins.2018.05.005> -- source of the
 bundled example data.
 
@@ -1138,8 +1138,8 @@ configuration-driven workflow follows.
 
 The script that generates the simulated workbook, including every effect
 planted in it, ships with the package at
-`system.file("script", "make_example_synthetic.R", package = "MRManalyzeR")`,
-with its provenance recorded in `system.file("script", "README.md", package =
+`system.file("scripts", "make_example_synthetic.R", package = "MRManalyzeR")`,
+with its provenance recorded in `system.file("scripts", "README.md", package =
 "MRManalyzeR")`.
 
 # Session info

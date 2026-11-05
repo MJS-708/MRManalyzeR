@@ -1,3 +1,26 @@
+# MRManalyzeR 0.99.8
+
+Changes from the second round of the Bioconductor review.
+
+* `inst/script/` is now `inst/scripts/`, the conventional name.
+
+* The citation for the example data gave the title of a different 2018
+  Kolmert paper (isolated human and guinea pig airways, *Analytical
+  Chemistry*) against the DOI of the one the data comes from, and wrong page
+  numbers. It now reads *Prominent release of lipoxygenase generated
+  mediators in a murine house dust mite-induced asthma model*,
+  *Prostaglandins & Other Lipid Mediators* 137, 20–29, everywhere it is
+  cited.
+
+* `newConfig(template = "combine")` closes by pointing at
+  `runMRManalyzeRCombine()` and the keys a combine file has, rather than at
+  `runMRManalyzeR()` and a `PeakMatrixProcessing:` block it does not contain.
+
+* `mrmValidateInput()` no longer rejects a workbook that leaves `Report`
+  blank on unreported rows. A blank compared as `NA`, so those rows' empty
+  compound names were counted as duplicates. It also takes `report_value`
+  now, rather than assuming `"YES"`.
+
 # MRManalyzeR 0.99.7
 
 * The `structToolbox` example in the getting-started vignette is guarded on

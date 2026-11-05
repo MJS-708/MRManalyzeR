@@ -12,6 +12,7 @@ mrmValidateInput(
   compound_col = "Compound",
   processing_name_col = "Processing_name",
   report_col = "Report",
+  report_value = "YES",
   include_col = "Include",
   include_value = "YES",
   injection_order_head = NULL
@@ -27,6 +28,9 @@ mrmValidateInput(
 when absent.}
 
 \item{name_col, compound_col, processing_name_col, report_col, include_col}{Column names, matching the arguments of [processDataset()].}
+
+\item{report_value}{Value of `report_col` marking features to report. Any
+other value, blank cells included, counts as not reported.}
 
 \item{include_value}{Value of `include_col` marking injections to process.}
 

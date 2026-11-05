@@ -132,8 +132,9 @@ Bioconductor tooling rather than being a private format.
 ### Example dataset
 
 A subset of the BAL fluid oxylipin panel from **Kolmert *et al.* (2018),
-*Prostaglandins & Other Lipid Mediators* 137, 11–18.**
-DOI: <https://doi.org/10.1016/j.prostaglandins.2018.05.005>.
+Prominent release of lipoxygenase generated mediators in a murine house dust
+mite-induced asthma model. *Prostaglandins & Other Lipid Mediators* 137,
+20–29.** DOI: <https://doi.org/10.1016/j.prostaglandins.2018.05.005>.
 
 The bundled xlsx (`inst/extdata/example_data.xlsx`) contains a
 TargetLynx-style workbook with `feature_metadata`, `sample_metadata` and

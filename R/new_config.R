@@ -24,7 +24,8 @@
 #'   rather than replace a configuration you have already edited.
 #' @return The path written, invisibly.
 #' @family entry points
-#' @seealso [runMRManalyzeR()], which runs the file this writes.
+#' @seealso [runMRManalyzeR()], which runs a `"study"` file, and
+#'   [runMRManalyzeRCombine()], which runs a `"combine"` one.
 #' @examples
 #' cfg <- newConfig(tempfile(fileext = ".yml"))
 #' cat(readLines(cfg)[1:12], sep = "\n")
@@ -64,9 +65,14 @@ newConfig <- function(path,
                else .cfg_study(source), path)
   }
 
-  message("Wrote: ", path,
-          "\nEdit paths:, then the column names under PeakMatrixProcessing:,",
-          " then run:\n  runMRManalyzeR(\"", path, "\")")
+  # The two templates have different keys to fill in and a different runner.
+  next_step <- if(identical(template, "combine"))
+    c("\nEdit the dataset paths under combine: datasets:, then output_stub:,",
+      " then run:\n  runMRManalyzeRCombine(\"", path, "\")")
+  else
+    c("\nEdit paths:, then the column names under PeakMatrixProcessing:,",
+      " then run:\n  runMRManalyzeR(\"", path, "\")")
+  message("Wrote: ", path, paste0(next_step, collapse = ""))
   invisible(path)
 }
 
