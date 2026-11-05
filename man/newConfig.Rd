@@ -50,7 +50,8 @@ cfg <- newConfig(tempfile(fileext = ".yml"))
 cat(readLines(cfg)[1:12], sep = "\n")
 }
 \seealso{
-[runMRManalyzeR()], which runs the file this writes.
+[runMRManalyzeR()], which runs a `"study"` file, and
+  [runMRManalyzeRCombine()], which runs a `"combine"` one.
 
 Other entry points:
 \code{\link[=mrmRunExample]{mrmRunExample()}},

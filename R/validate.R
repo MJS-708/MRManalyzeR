@@ -1,3 +1,14 @@
+#' Does a metadata column equal a filter value?
+#'
+#' The same exact comparison [processDataset()] makes, but NA-safe: a blank
+#' cell is FALSE rather than NA, so the result is always usable as an index.
+#' @keywords internal
+#' @noRd
+.is_val <- function(x, value){
+  out <- as.character(x) == as.character(value)
+  !is.na(out) & out
+}
+
 #' Collect validation findings
 #'
 #' A tiny accumulator so each check reports itself the same way and the caller
@@ -105,6 +116,8 @@ print.mrm_validation <- function(x, ...){
 #'   when absent.
 #' @param name_col,compound_col,processing_name_col,report_col,include_col
 #'   Column names, matching the arguments of [processDataset()].
+#' @param report_value Value of `report_col` marking features to report. Any
+#'   other value, blank cells included, counts as not reported.
 #' @param include_value Value of `include_col` marking injections to process.
 #' @param injection_order_head `sample_meta` column holding acquisition order,
 #'   or `NULL` (default) to skip the check. When given, every included
@@ -127,6 +140,7 @@ mrmValidateInput <- function(feature_meta, sample_meta, data = NULL,
                           compound_col        = "Compound",
                           processing_name_col = "Processing_name",
                           report_col          = "Report",
+                          report_value        = "YES",
                           include_col         = "Include",
                           include_value       = "YES",
                           injection_order_head = NULL){
@@ -180,7 +194,11 @@ mrmValidateInput <- function(feature_meta, sample_meta, data = NULL,
   }
 
   if(ok_f){
-    reported <- if(has_report) as.character(fm[[report_col]]) == "YES"
+    # A blank report_col cell means "not reported", not "unknown": comparing
+    # it with == would give NA, and subsetting by an NA index returns an NA
+    # element, so a workbook that leaves the column blank on unreported rows
+    # used to be rejected for holding duplicate NA compound names.
+    reported <- if(has_report) .is_val(fm[[report_col]], report_value)
                else           rep(TRUE, nrow(fm))
     for(cl in unique(c(compound_col, processing_name_col))){
       v  <- as.character(fm[[cl]])[reported]

@@ -458,6 +458,7 @@ runMRManalyzeR <- function(path_yaml){
                             compound_col        = compound_col,
                             processing_name_col = processing_name_col,
                             report_col          = report_col,
+                            report_value        = report_value,
                             include_col         = include_col,
                             include_value       = include_value,
                             # Drift plots and the QC-PCA read it as a number,

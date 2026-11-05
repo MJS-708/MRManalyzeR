@@ -61,3 +61,34 @@ test_that("an included injection's order has to be a number", {
   v <- mrmValidateInput(fm_ok(), sm, injection_order_head = "Injection_order")
   expect_length(v$errors, 0)
 })
+
+test_that("unreported rows with blank names are not duplicate compounds", {
+  # A curated workbook often fills Report only on the rows it keeps and leaves
+  # the rest blank, with no Compound name to go with them. Those rows are not
+  # reported, so they cannot collide with anything; comparing the blank cell
+  # with == gives NA, and an NA index used to pull NA names into the
+  # uniqueness check and report them as duplicates.
+  fm <- data.frame(
+    Compound        = c("A", "B", NA, NA),
+    Processing_name = c("a", "b", NA, NA),
+    Report          = c("YES", "YES", NA, ""),
+    stringsAsFactors = FALSE)
+
+  v <- mrmValidateInput(fm, sm_ok())
+  expect_length(v$errors, 0)
+})
+
+test_that("report_value is honoured rather than assumed to be YES", {
+  fm <- data.frame(Compound        = c("A", "A", "B"),
+                  Processing_name = c("a", "b", "c"),
+                  Report          = c("keep", "keep", "YES"),
+                  stringsAsFactors = FALSE)
+
+  # The duplicate is among the rows this workbook marks as reported.
+  v <- mrmValidateInput(fm, sm_ok(), report_value = "keep")
+  expect_match(v$errors, "duplicate", all = FALSE)
+
+  # Under the default the same duplicate is invisible, because neither row
+  # counts as reported.
+  expect_length(mrmValidateInput(fm, sm_ok())$errors, 0)
+})

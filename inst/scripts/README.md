@@ -7,9 +7,9 @@ scripts that generate it live in this directory.
 
 A subset of the targeted oxylipin panel published in
 
-> Kolmert J. *et al.* (2018). Lipid mediator quantification in isolated human
-> and guinea pig airways: an expanded approach for respiratory research.
-> *Prostaglandins & Other Lipid Mediators* **137**, 11–18.
+> Kolmert J. *et al.* (2018). Prominent release of lipoxygenase generated
+> mediators in a murine house dust mite-induced asthma model.
+> *Prostaglandins & Other Lipid Mediators* **137**, 20–29.
 > <https://doi.org/10.1016/j.prostaglandins.2018.05.005>
 
 exported from Waters TargetLynx and cut down to a size that suits a package
@@ -33,7 +33,7 @@ seed, so the files can be rebuilt exactly.
 
 ```r
 devtools::load_all()
-source("inst/script/make_example_synthetic.R")
+source("inst/scripts/make_example_synthetic.R")
 ```
 
 The script writes the Skyline-layout workbook and the processed

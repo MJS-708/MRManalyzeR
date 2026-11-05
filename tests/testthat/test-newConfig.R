@@ -77,6 +77,20 @@ test_that("an edited configuration is not replaced by accident", {
   expect_equal(loadConfig(cfg)$project$name, "my_study")
 })
 
+test_that("the closing message names the runner for the template written", {
+  td <- withr::local_tempdir()
+
+  # A combine file run through runMRManalyzeR() fails, so pointing at that
+  # runner would send the reader the wrong way. The study runner's name is a
+  # prefix of the combine one's, hence the opening bracket in each pattern.
+  expect_message(newConfig(file.path(td, "s.yml")), "runMRManalyzeR\\(")
+  m <- tryCatch(newConfig(file.path(td, "c.yml"), template = "combine"),
+                message = conditionMessage)
+  expect_match(m, "runMRManalyzeRCombine\\(")
+  expect_no_match(m, "runMRManalyzeR\\(")
+  expect_no_match(m, "PeakMatrixProcessing")
+})
+
 test_that("the combine template writes the merge form", {
   td  <- withr::local_tempdir()
   cfg <- file.path(td, "combine.yml")
