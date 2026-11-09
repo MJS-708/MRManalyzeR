@@ -244,6 +244,16 @@ boxplot_factors = boxplot_factors[!is.null(boxplot_factors) & nzchar(boxplot_fac
 boxplot_display = report_pars$boxplot$display %||% "tabs"      # combined | tabs
 boxplot_levels  = report_pars$boxplot$levels %||% sample_labels
 boxplot_head    = report_pars$boxplot$head   %||% sample_type_head
+# facet_by splits the by-factor plots into one panel per level of a column;
+# free_y gives every faceted plot in the report (these, the per-comparison
+# panels and the ratio panels) its own y-axis per panel.
+boxplot_facet   = report_pars$boxplot$facet_by
+boxplot_facet   = if(length(boxplot_facet) && nzchar(boxplot_facet[1]))
+                    as.character(boxplot_facet[1]) else NULL
+boxplot_free_y  = isTRUE(report_pars$boxplot$free_y %||% FALSE)
+# The facet column is the panel, so it is not also a grouping on the x-axis.
+boxplot_group_factors = setdiff(boxplot_factors, boxplot_facet)
+if(!length(boxplot_group_factors)) boxplot_group_factors = boxplot_factors
 
 # Plot type — applies to BOTH section 4.2 (faceted across comparisons) and 4.3
 # (general by-factor). Values: "box" | "bar" | "both". When "both", boxplot
@@ -355,6 +365,7 @@ interactive_plots = isTRUE(report_pars$interactive_plots %||% TRUE) &&
   types = if(plot_type == "both") c("box", "bar") else plot_type
   out = lapply(types, function(ty)
     plotBoxplot(de_plot, compound, group_by, facet_by = facet_by,
+                 free_y         = boxplot_free_y,
                  type           = ty,
                  error_bar      = plot_error_bar,
                  value_label    = units,
@@ -661,7 +672,7 @@ for(i in seq_along(detected_compounds)){
 
 `r if(!boxplot_enabled) "_Skipped — set_ \x60boxplot.enabled: True\x60 _in YAML to enable._"`
 
-`r if(boxplot_enabled) sprintf("Per-compound boxplot grouped by_ \x60%s\x60_. Display mode:_ \x60%s\x60_._", paste(boxplot_factors, collapse=", "), boxplot_display)`
+`r if(boxplot_enabled) sprintf("Per-compound boxplot grouped by \x60%s\x60. Display mode: \x60%s\x60.%s", paste(boxplot_group_factors, collapse=", "), boxplot_display, if(is.null(boxplot_facet)) "" else sprintf(" One panel per \x60%s\x60%s.", boxplot_facet, if(boxplot_free_y) ", each on its own y-axis" else ""))`
 
 ```{r factor-boxplots, results="asis", eval=boxplot_enabled && length(boxplot_factors) > 0, fig.width=10*fig_scale, fig.height=6*fig_scale}
 # Filter to requested sample types
@@ -678,6 +689,10 @@ if(length(missing_bf))
   stop(sprintf(
     "[stats_report] boxplot.factors contains column(s) not in sample_metadata: %s. Available columns: %s",
     paste(missing_bf, collapse = ", "), paste(colnames(plot_meta), collapse = ", ")))
+if(!is.null(boxplot_facet) && !boxplot_facet %in% colnames(plot_meta))
+  stop(sprintf(
+    "[stats_report] boxplot.facet_by '%s' is not a sample_metadata column. Available columns: %s",
+    boxplot_facet, paste(colnames(plot_meta), collapse = ", ")))
 
 # Detect compounds with any data
 is_detected_fb = vapply(compound_names, function(cmp){
@@ -690,15 +705,15 @@ detected_ids_fb = vapply(detected_fb, make_safe_id_fb, character(1))
 
 # Build per-tab grouping vectors
 tab_groupings = list()
-if(boxplot_display == "combined" || length(boxplot_factors) == 1){
-  lab = paste(boxplot_factors, collapse = " × ")
-  tab_groupings[[lab]] = do.call(paste, c(plot_meta[boxplot_factors], sep = "_"))
+if(boxplot_display == "combined" || length(boxplot_group_factors) == 1){
+  lab = paste(boxplot_group_factors, collapse = " × ")
+  tab_groupings[[lab]] = do.call(paste, c(plot_meta[boxplot_group_factors], sep = "_"))
 } else {
-  for(f in boxplot_factors)
+  for(f in boxplot_group_factors)
     tab_groupings[[f]] = as.character(plot_meta[[f]])
-  if(length(boxplot_factors) >= 2){
-    lab = paste(boxplot_factors, collapse = " × ")
-    tab_groupings[[lab]] = do.call(paste, c(plot_meta[boxplot_factors], sep = "_"))
+  if(length(boxplot_group_factors) >= 2){
+    lab = paste(boxplot_group_factors, collapse = " × ")
+    tab_groupings[[lab]] = do.call(paste, c(plot_meta[boxplot_group_factors], sep = "_"))
   }
 }
 
@@ -754,7 +769,7 @@ function showFactorBoxplot_%s(id){
     compound = detected_fb[i]
     cid      = detected_ids_fb[i]
     plots = .compound_plots(.tab_de, compound, ".group",
-                            facet_by = NULL)
+                            facet_by = boxplot_facet)
 
     # Show alphabetically-first compound by default (matches dropdown)
     display = if(detected_ids_fb[i] == detected_ids_alpha_fb[1]) "block" else "none"
@@ -1613,6 +1628,17 @@ for(ratio_cfg in ion_ratios_list){
 
       y_lim = quantile(long_ir$ratio_value, prob = yaxis_quant, na.rm = TRUE) * yaxis_scalar
       y_ann = y_lim * 0.97
+      # plotBoxplot() facets on a column called `facet`; without one the
+      # labels are drawn in every panel. On free axes each panel has its own
+      # cap, worked out as plotBoxplot() does, and the label hangs from that.
+      anno_ir$facet = anno_ir$.comparison
+      anno_ir$y = y_ann
+      if(boxplot_free_y){
+        cap_cmp = tapply(long_ir$ratio_value, long_ir$.comparison, function(v)
+          quantile(v, prob = yaxis_quant, na.rm = TRUE) * yaxis_scalar)
+        y_free = cap_cmp[anno_ir$.comparison] * 0.97
+        anno_ir$y = ifelse(is.finite(y_free), y_free, y_ann)
+      }
 
       .ir_de = struct::DatasetExperiment(
         data          = data.frame(ratio = long_ir$ratio_value,
@@ -1633,6 +1659,7 @@ for(ratio_cfg in ion_ratios_list){
       plots_ir = lapply(if(plot_type == "both") c("box", "bar") else plot_type,
         function(ty)
           plotBoxplot(.ir_de, "ratio", ".group", facet_by = ".comparison",
+                       free_y         = boxplot_free_y,
                        type           = ty,
                        error_bar      = plot_error_bar,
                        value_label    = "ratio",
@@ -1641,8 +1668,8 @@ for(ratio_cfg in ion_ratios_list){
                        yaxis_scalar   = yaxis_scalar) +
             ggplot2::labs(title = ratio_lbl) +
             ggplot2::geom_text(data = anno_ir,
-                               ggplot2::aes(x = .group, label = label),
-                               y = y_ann, hjust = 0.5, vjust = 1, size = 3.2,
+                               ggplot2::aes(x = .group, y = y, label = label),
+                               hjust = 0.5, vjust = 1, size = 3.2,
                                fontface = "italic", color = "grey30",
                                inherit.aes = FALSE))
       names(plots_ir) = if(plot_type == "both") c("box", "bar") else plot_type
@@ -1664,7 +1691,10 @@ for(ratio_cfg in ion_ratios_list){
     ir_meta  = metadata[keep_ir, , drop = FALSE]
     ir_ratio = ratio_all[rownames(ir_meta)]
 
-    for(f in boxplot_factors){
+    ir_facet = if(!is.null(boxplot_facet) && boxplot_facet %in% colnames(ir_meta))
+                 boxplot_facet else NULL
+
+    for(f in boxplot_group_factors){
       if(!f %in% colnames(ir_meta)) next
       sid_ir = if(sample_id_head %in% colnames(ir_meta))
                  as.character(ir_meta[[sample_id_head]]) else rownames(ir_meta)
@@ -1673,6 +1703,8 @@ for(ratio_cfg in ion_ratios_list){
                         sample_id = sid_ir,
                         gsf       = if(global_summary_factor %in% colnames(ir_meta))
                                       as.character(ir_meta[[global_summary_factor]]) else NA_character_,
+                        panel     = if(is.null(ir_facet)) NA_character_ else
+                                      as.character(ir_meta[[ir_facet]]),
                         stringsAsFactors = FALSE)
       df_f = df_f[!is.na(df_f$group), ]
       if(nrow(df_f) == 0) next
@@ -1687,6 +1719,7 @@ for(ratio_cfg in ion_ratios_list){
                          row.names = make.unique(df_f$sample_id))
           m[[sample_id_head]]        = df_f$sample_id
           m[[global_summary_factor]] = df_f$gsf
+          m$.panel                   = df_f$panel
           m
         }),
         variable_meta = data.frame(Compound = "ratio", row.names = "ratio"))
@@ -1694,6 +1727,8 @@ for(ratio_cfg in ion_ratios_list){
       plots_f = lapply(if(plot_type == "both") c("box", "bar") else plot_type,
         function(ty)
           plotBoxplot(.irf_de, "ratio", ".group",
+                       facet_by       = if(is.null(ir_facet)) NULL else ".panel",
+                       free_y         = boxplot_free_y,
                        type           = ty,
                        error_bar      = plot_error_bar,
                        value_label    = "ratio",

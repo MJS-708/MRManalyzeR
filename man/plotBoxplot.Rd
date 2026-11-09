@@ -9,6 +9,7 @@ plotBoxplot(
   compound,
   group_by,
   facet_by = NULL,
+  free_y = FALSE,
   type = c("box", "bar"),
   error_bar = c("SD", "SE", "none"),
   value_label = "value",
@@ -29,6 +30,11 @@ plotBoxplot(
 \item{facet_by}{Optional `sample_meta` column to facet across, e.g. one
 panel per comparison.}
 
+\item{free_y}{Give each facet its own y-axis, for panels measured on
+different scales - tissue and culture media, say - where a shared axis
+flattens one of them. Each axis is capped from its own panel's values.
+Ignored without `facet_by`.}
+
 \item{type}{`"box"` or `"bar"`.}
 
 \item{error_bar}{`"SD"`, `"SE"` or `"none"` - bars only.}
@@ -42,7 +48,8 @@ tooltip; `NULL` uses row names.}
 typically the primary study factor.}
 
 \item{yaxis_quant, yaxis_scalar}{Quantile used to cap the y-axis, and the
-headroom multiplier above it.}
+headroom multiplier above it. `yaxis_quant = 1` caps at the largest value,
+so no point is ever drawn as off-scale.}
 
 \item{fill_brewer}{Use the package's qualitative palette for group fills;
 `FALSE` keeps ggplot2's default hue scale.}
@@ -64,7 +71,11 @@ both, the box for distribution and the bar for the summary the statistics
 were computed on.
 
 The y-axis is capped at `quantile(value, yaxis_quant) * yaxis_scalar` so one
-extreme injection cannot flatten the groups.
+extreme injection cannot flatten the groups. A point above the cap is drawn
+at it as a triangle, with its value in the tooltip, so it is marked rather
+than lost; the boxes and bars are computed from the values as measured.
+With `free_y = TRUE` each facet gets its own axis and its own cap, worked
+out from that panel's values alone.
 }
 \examples{
 de <- loadDataset(system.file("extdata", "example_synthetic.RDS",
@@ -73,6 +84,9 @@ de <- subsetDataset(de, conditions = list(Sample_type = "Sample"))
 plotBoxplot(de, "Analyte_02", "Treatment", value_label = "ng/mL")
 plotBoxplot(de, "Analyte_02", "Treatment", type = "bar",
              error_bar = "SE")
+# One panel per batch, each on its own axis.
+plotBoxplot(de, "Analyte_02", "Treatment", facet_by = "Chrom_Batch",
+             free_y = TRUE)
 }
 \seealso{
 [summariseGroups()] for the numbers the bars are drawn from.
