@@ -279,6 +279,11 @@ project: &general
       plot_type: both                     # box | bar | both
       error_bar: SD                       # SD | SE | none
       # levels: ["Sample"]                # rows included; default = sample_labels
+      # facet_by: Tissue_type             # one panel per level of this column
+      # free_y: False                     # True = each panel its own y-axis and
+      #                                   # yaxis_quant cap: here, per comparison
+      #                                   # and for ratios. Points above a cap are
+      #                                   # drawn at it as triangles.
 
     # -- PCA per comparison --
     pca:

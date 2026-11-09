@@ -12,13 +12,21 @@
 #' were computed on.
 #'
 #' The y-axis is capped at `quantile(value, yaxis_quant) * yaxis_scalar` so one
-#' extreme injection cannot flatten the groups.
+#' extreme injection cannot flatten the groups. A point above the cap is drawn
+#' at it as a triangle, with its value in the tooltip, so it is marked rather
+#' than lost; the boxes and bars are computed from the values as measured.
+#' With `free_y = TRUE` each facet gets its own axis and its own cap, worked
+#' out from that panel's values alone.
 #'
 #' @param de A `struct::DatasetExperiment`.
 #' @param compound Feature (column) name to plot.
 #' @param group_by `sample_meta` column defining the x-axis groups.
 #' @param facet_by Optional `sample_meta` column to facet across, e.g. one
 #'   panel per comparison.
+#' @param free_y Give each facet its own y-axis, for panels measured on
+#'   different scales - tissue and culture media, say - where a shared axis
+#'   flattens one of them. Each axis is capped from its own panel's values.
+#'   Ignored without `facet_by`.
 #' @param type `"box"` or `"bar"`.
 #' @param error_bar `"SD"`, `"SE"` or `"none"` - bars only.
 #' @param value_label Y-axis label, e.g. the datatype units.
@@ -27,7 +35,8 @@
 #' @param tooltip_factor Additional `sample_meta` column shown in the tooltip,
 #'   typically the primary study factor.
 #' @param yaxis_quant,yaxis_scalar Quantile used to cap the y-axis, and the
-#'   headroom multiplier above it.
+#'   headroom multiplier above it. `yaxis_quant = 1` caps at the largest value,
+#'   so no point is ever drawn as off-scale.
 #' @param fill_brewer Use the package's qualitative palette for group fills;
 #'   `FALSE` keeps ggplot2's default hue scale.
 #' @return A `ggplot`.
@@ -38,10 +47,14 @@
 #' plotBoxplot(de, "Analyte_02", "Treatment", value_label = "ng/mL")
 #' plotBoxplot(de, "Analyte_02", "Treatment", type = "bar",
 #'              error_bar = "SE")
+#' # One panel per batch, each on its own axis.
+#' plotBoxplot(de, "Analyte_02", "Treatment", facet_by = "Chrom_Batch",
+#'              free_y = TRUE)
 #' @family stats
 #' @seealso [summariseGroups()] for the numbers the bars are drawn from.
 #' @export
 plotBoxplot <- function(de, compound, group_by, facet_by = NULL,
+                        free_y         = FALSE,
                         type           = c("box", "bar"),
                         error_bar      = c("SD", "SE", "none"),
                         value_label    = "value",
@@ -53,6 +66,8 @@ plotBoxplot <- function(de, compound, group_by, facet_by = NULL,
   .check_de(de, "plotBoxplot")
 
   type <- match.arg(type)
+  if(!is.logical(free_y) || length(free_y) != 1L || is.na(free_y))
+    stop("[plotBoxplot] free_y must be TRUE or FALSE.", call. = FALSE)
 
   # YAML supplies these uppercase ("SD" / "SE" / "NONE"); accept either case
   # rather than make every caller normalise.
@@ -88,14 +103,44 @@ plotBoxplot <- function(de, compound, group_by, facet_by = NULL,
                        tooltip_factor %||% "group", extra)
 
   if(!is.null(facet_by)) df$facet <- as.character(smeta[[facet_by]])
+  free_y <- free_y && !is.null(facet_by)
 
-  cap <- stats::quantile(df$value, probs = yaxis_quant, na.rm = TRUE) *
-        yaxis_scalar
+  # The cap: one across the plot, or one per panel on free axes.
+  cap_of <- function(v)
+    unname(stats::quantile(v, probs = yaxis_quant, na.rm = TRUE)) * yaxis_scalar
+  if(free_y){
+    caps <- vapply(split(df$value, df$facet), function(v)
+      if(all(is.na(v))) NA_real_ else cap_of(v), numeric(1))
+    df$cap <- unname(caps[df$facet])
+  } else {
+    df$cap <- if(all(is.na(df$value))) NA_real_ else cap_of(df$value)
+  }
+
+  # A point above the cap is drawn at it, as a triangle, rather than vanishing
+  # off the top. Only the points move: the boxes and bars use `value`.
+  df$off_scale <- !is.na(df$value) & !is.na(df$cap) & df$value > df$cap
+  df$shown     <- ifelse(df$off_scale, df$cap, df$value)
+
+  # A coord limit is one range for every panel, so free axes are set another
+  # way: from zero, with a blank point at each panel's cap to reach up to it.
+  # Nothing in a panel then rises above its cap - the off-scale points are
+  # drawn at it, and the boxes drop their outliers - so the cap is the top.
+  ylim <- if(free_y){
+    caps_df <- data.frame(facet = names(caps), cap = unname(caps))
+    list(ggplot2::expand_limits(y = 0),
+         ggplot2::geom_blank(data = caps_df[!is.na(caps_df$cap), ],
+                             ggplot2::aes(y = .data$cap),
+                             inherit.aes = FALSE))
+  } else {
+    ggplot2::coord_cartesian(ylim = c(0, df$cap[1]))
+  }
 
   p <- ggplot2::ggplot(df, ggplot2::aes(.data$group, .data$value,
                                        fill = .data$group)) +
-    ggplot2::coord_cartesian(ylim = c(0, cap)) +
-    ggplot2::labs(x = NULL, y = value_label, title = compound) +
+    ylim +
+    ggplot2::labs(x = NULL, y = value_label, title = compound,
+                  caption = if(type == "box" && any(df$off_scale))
+                    "Triangles: values above the axis, drawn at its top.") +
     ggplot2::theme_classic() +
     ggplot2::theme(
       axis.text.x = ggplot2::element_text(angle = 90, vjust = 0.5, hjust = 1),
@@ -106,15 +151,24 @@ plotBoxplot <- function(de, compound, group_by, facet_by = NULL,
               values = .group_fill_colors(df$group), na.value = "grey60")
 
   if(!is.null(facet_by))
-    p <- p + ggplot2::facet_wrap(~ facet, scales = "free_x", nrow = 1)
+    p <- p + ggplot2::facet_wrap(~ facet, nrow = 1,
+                                 scales = if(free_y) "free" else "free_x")
 
   if(type == "box"){
     # The tooltip is bound only to the jitter layer. Putting `text` on the
     # parent ggplot makes ggplotly() emit one trace per row across every
     # layer, which draws horizontal lines through the boxes.
-    p + ggplot2::geom_boxplot(alpha = 0.3, outlier.shape = NA) +
-      ggplot2::geom_jitter(ggplot2::aes(text = .data$tooltip),
-                           width = 0.15, alpha = 0.7, size = 1.4)
+    # `outliers = FALSE` keeps the box's outliers from stretching the axis;
+    # the jittered points draw every injection anyway. No vertical jitter:
+    # it would move a value up or down the axis it is read against.
+    p + ggplot2::geom_boxplot(alpha = 0.3, outliers = FALSE) +
+      ggplot2::geom_point(ggplot2::aes(y = .data$shown, text = .data$tooltip,
+                                       shape = .data$off_scale),
+                          position = ggplot2::position_jitter(width = 0.15,
+                                                              height = 0),
+                          alpha = 0.7, size = 1.4) +
+      ggplot2::scale_shape_manual(values = c(`FALSE` = 16, `TRUE` = 17),
+                                  guide = "none")
   } else {
     err_fn <- switch(
       error_bar,
