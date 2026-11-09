@@ -9,7 +9,6 @@ plotBoxplot(
   compound,
   group_by,
   facet_by = NULL,
-  free_y = FALSE,
   type = c("box", "bar"),
   error_bar = c("SD", "SE", "none"),
   value_label = "value",
@@ -17,7 +16,8 @@ plotBoxplot(
   tooltip_factor = NULL,
   yaxis_quant = 0.95,
   yaxis_scalar = 1.3,
-  fill_brewer = TRUE
+  fill_brewer = TRUE,
+  free_y = FALSE
 )
 }
 \arguments{
@@ -29,11 +29,6 @@ plotBoxplot(
 
 \item{facet_by}{Optional `sample_meta` column to facet across, e.g. one
 panel per comparison.}
-
-\item{free_y}{Give each facet its own y-axis, for panels measured on
-different scales - tissue and culture media, say - where a shared axis
-flattens one of them. Each axis is capped from its own panel's values.
-Ignored without `facet_by`.}
 
 \item{type}{`"box"` or `"bar"`.}
 
@@ -53,6 +48,11 @@ so no point is ever drawn as off-scale.}
 
 \item{fill_brewer}{Use the package's qualitative palette for group fills;
 `FALSE` keeps ggplot2's default hue scale.}
+
+\item{free_y}{Give each facet its own y-axis, for panels measured on
+different scales - tissue and culture media, say - where a shared axis
+flattens one of them. Each axis is capped from its own panel's values.
+Ignored without `facet_by`.}
 }
 \value{
 A `ggplot`.

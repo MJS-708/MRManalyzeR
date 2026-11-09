@@ -1,4 +1,4 @@
-# MRManalyzeR 0.99.9
+# MRManalyzeR 0.99.10
 
 First Bioconductor release, in Bioconductor 3.24.
 
@@ -48,6 +48,11 @@ can be run from one YAML configuration.
 * `mrmRunPCA()`, `mrmPlotPCA()`, `plotLoadings()`, `mrmPlotHeatmap()`,
   `plotGroupHeatmap()`, `plotBoxplot()`, `plotVolcano()` and
   `plotCorrelation()` draw every figure in the reports.
+* Box and bar plots can split into panels with their own y-axes
+  (`plotBoxplot(free_y = TRUE)`; `boxplot: facet_by:` and `free_y:` in the
+  configuration), for groups measured on different scales such as tissue and
+  culture media. A point above the axis cap is drawn at it as a triangle,
+  with its value in the tooltip, rather than left off the plot.
 
 ## YAML workflow and reports
 
