@@ -23,10 +23,6 @@
 #' @param group_by `sample_meta` column defining the x-axis groups.
 #' @param facet_by Optional `sample_meta` column to facet across, e.g. one
 #'   panel per comparison.
-#' @param free_y Give each facet its own y-axis, for panels measured on
-#'   different scales - tissue and culture media, say - where a shared axis
-#'   flattens one of them. Each axis is capped from its own panel's values.
-#'   Ignored without `facet_by`.
 #' @param type `"box"` or `"bar"`.
 #' @param error_bar `"SD"`, `"SE"` or `"none"` - bars only.
 #' @param value_label Y-axis label, e.g. the datatype units.
@@ -39,6 +35,10 @@
 #'   so no point is ever drawn as off-scale.
 #' @param fill_brewer Use the package's qualitative palette for group fills;
 #'   `FALSE` keeps ggplot2's default hue scale.
+#' @param free_y Give each facet its own y-axis, for panels measured on
+#'   different scales - tissue and culture media, say - where a shared axis
+#'   flattens one of them. Each axis is capped from its own panel's values.
+#'   Ignored without `facet_by`.
 #' @return A `ggplot`.
 #' @examples
 #' de <- loadDataset(system.file("extdata", "example_synthetic.RDS",
@@ -54,7 +54,6 @@
 #' @seealso [summariseGroups()] for the numbers the bars are drawn from.
 #' @export
 plotBoxplot <- function(de, compound, group_by, facet_by = NULL,
-                        free_y         = FALSE,
                         type           = c("box", "bar"),
                         error_bar      = c("SD", "SE", "none"),
                         value_label    = "value",
@@ -62,7 +61,8 @@ plotBoxplot <- function(de, compound, group_by, facet_by = NULL,
                         tooltip_factor = NULL,
                         yaxis_quant    = 0.95,
                         yaxis_scalar   = 1.3,
-                        fill_brewer    = TRUE){
+                        fill_brewer    = TRUE,
+                        free_y         = FALSE){
   .check_de(de, "plotBoxplot")
 
   type <- match.arg(type)
